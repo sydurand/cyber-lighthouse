@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cyber-Lighthouse Dashboard</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Font Awesome Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- Navigation -->
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">
+            <i class="fas fa-lighthouse"></i> Cyber-Lighthouse Dashboard
+          </a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarNav"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav ms-auto">
+              <li class="nav-item">
+                <a
+                  class="nav-link active"
+                  href="#"
+                  @click.prevent="currentTab = 'alerts'"
+                >
+                  <i class="fas fa-bell"></i> Alerts
+                </a>
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="#"
+                  @click.prevent="currentTab = 'reports'"
+                >
+                  <i class="fas fa-file-alt"></i> Reports
+                </a>
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="#"
+                  @click.prevent="currentTab = 'stats'"
+                >
+                  <i class="fas fa-chart-bar"></i> Statistics
+                </a>
+              </li>
+              <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="#"
+                  @click.prevent="currentTab = 'articles'"
+                >
+                  <i class="fas fa-archive"></i> History
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Main Container -->
+      <div class="container-fluid py-4">
+        <div class="row">
+          <!-- Sidebar -->
+          <div class="col-lg-3">
+            <div class="card shadow-sm mb-4">
+              <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">
+                  <i class="fas fa-server"></i> System Status
+                </h6>
+              </div>
+              <div class="card-body">
+                <div class="mb-3" v-if="systemStatus">
+                  <small class="text-muted">Database</small>
+                  <div>{{ systemStatus.database_size_mb.toFixed(2) }} MB</div>
+                </div>
+                <div class="mb-3" v-if="systemStatus">
+                  <small class="text-muted">Cache Entries</small>
+                  <div>{{ systemStatus.cache.total_entries }}</div>
+                </div>
+                <div class="mb-3" v-if="systemStatus">
+                  <small class="text-muted">Cache Hit Rate</small>
+                  <div>{{ systemStatus.cache.cache_hit_rate.toFixed(1) }}%</div>
+                </div>
+                <div class="mb-3" v-if="systemStatus">
+                  <small class="text-muted">API Quota</small>
+                  <div>
+                    {{ systemStatus.api_quota_remaining }}/{{
+                      systemStatus.api_quota_total
+                    }}
+                    remaining
+                  </div>
+                </div>
+                <div class="mb-3" v-if="systemStatus">
+                  <small class="text-muted">Last Update</small>
+                  <div class="text-truncate">{{ systemStatus.last_update }}</div>
+                </div>
+                <hr />
+                <button
+                  class="btn btn-sm btn-primary w-100"
+                  @click="refreshData"
+                  :disabled="isLoading"
+                >
+                  <i class="fas fa-sync-alt" :class="{ 'spin': isLoading }"></i>
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="card shadow-sm">
+              <div class="card-header bg-success text-white">
+                <h6 class="mb-0">
+                  <i class="fas fa-chart-line"></i> Quick Stats
+                </h6>
+              </div>
+              <div class="card-body" v-if="statistics">
+                <div class="stat-item">
+                  <span class="stat-label">Total Articles</span>
+                  <span class="stat-value">{{ statistics.total_articles }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Today</span>
+                  <span class="stat-value">{{ statistics.articles_today }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">This Week</span>
+                  <span class="stat-value">{{
+                    statistics.articles_this_week
+                  }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">Sources</span>
+                  <span class="stat-value">{{ statistics.sources_count }}</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-label">API Calls Saved</span>
+                  <span class="stat-value text-success">{{
+                    statistics.api_calls_saved
+                  }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Content -->
+          <div class="col-lg-9">
+            <!-- Alerts Panel -->
+            <div v-show="currentTab === 'alerts'">
+              <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">
+                  <h5 class="mb-0">
+                    <i class="fas fa-bell"></i> Latest Alerts
+                  </h5>
+                </div>
+                <div class="card-body">
+                  <div
+                    v-if="alerts.length === 0"
+                    class="alert alert-info"
+                    role="alert"
+                  >
+                    No alerts available
+                  </div>
+                  <div v-for="alert in alerts" :key="alert.id" class="alert-item">
+                    <div class="alert-header">
+                      <span class="badge bg-warning text-dark">{{
+                        alert.source
+                      }}</span>
+                      <span class="alert-date">{{ alert.date }}</span>
+                    </div>
+                    <h6 class="alert-title">{{ alert.title }}</h6>
+                    <div v-if="alert.analysis" class="alert-analysis">
+                      {{ alert.analysis }}
+                    </div>
+                    <a :href="alert.link" target="_blank" class="btn btn-sm btn-outline-primary"
+                      >Read More</a
+                    >
+                  </div>
+
+                  <nav>
+                    <ul class="pagination">
+                      <li class="page-item">
+                        <button
+                          class="page-link"
+                          @click="alertsOffset = Math.max(0, alertsOffset - 20)"
+                          :disabled="alertsOffset === 0"
+                        >
+                          Previous
+                        </button>
+                      </li>
+                      <li class="page-item">
+                        <button
+                          class="page-link"
+                          @click="alertsOffset += 20"
+                          :disabled="alerts.length < 20"
+                        >
+                          Next
+                        </button>
+                      </li>
+                    </ul>
+                  </nav>
+                </div>
+              </div>
+            </div>
+
+            <!-- Reports Panel -->
+            <div v-show="currentTab === 'reports'">
+              <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                  <h5 class="mb-0">
+                    <i class="fas fa-file-alt"></i> Daily Synthesis Reports
+                  </h5>
+                </div>
+                <div class="card-body">
+                  <div
+                    v-if="reports.length === 0"
+                    class="alert alert-info"
+                    role="alert"
+                  >
+                    No reports available yet
+                  </div>
+                  <div v-for="report in reports" :key="report.id" class="report-item">
+                    <div class="report-header">
+                      <h6>{{ report.generated_date }}</h6>
+                      <small class="text-muted"
+                        >Articles: {{ report.articles_count }}</small
+                      >
+                    </div>
+                    <div class="report-content">{{ report.report_content }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Statistics Panel -->
+            <div v-show="currentTab === 'stats'">
+              <div class="row">
+                <div class="col-md-6 mb-4">
+                  <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                      <h6 class="mb-0">Articles by Source</h6>
+                    </div>
+                    <div class="card-body">
+                      <canvas id="chartBySource"></canvas>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                  <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                      <h6 class="mb-0">Articles by Date</h6>
+                    </div>
+                    <div class="card-body">
+                      <canvas id="chartByDate"></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                  <h6 class="mb-0">
+                    <i class="fas fa-chart-bar"></i> Metrics
+                  </h6>
+                </div>
+                <div class="card-body">
+                  <div class="row" v-if="statistics">
+                    <div class="col-md-4 mb-3">
+                      <div class="metric-card">
+                        <div class="metric-value">
+                          {{ statistics.total_articles }}
+                        </div>
+                        <div class="metric-label">Total Articles</div>
+                      </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                      <div class="metric-card">
+                        <div class="metric-value">
+                          {{ statistics.processed_articles }}
+                        </div>
+                        <div class="metric-label">Processed</div>
+                      </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                      <div class="metric-card">
+                        <div class="metric-value text-success">
+                          {{ statistics.cache_hit_rate.toFixed(1) }}%
+                        </div>
+                        <div class="metric-label">Cache Hit Rate</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Articles History Panel -->
+            <div v-show="currentTab === 'articles'">
+              <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                  <h5 class="mb-0">
+                    <i class="fas fa-archive"></i> Article History
+                  </h5>
+                </div>
+                <div class="card-body">
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <input
+                        v-model="searchQuery"
+                        type="text"
+                        class="form-control"
+                        placeholder="Search articles..."
+                      />
+                    </div>
+                    <div class="col-md-6">
+                      <select v-model="filterSource" class="form-select">
+                        <option value="">All Sources</option>
+                        <option
+                          v-for="source in uniqueSources"
+                          :key="source"
+                          :value="source"
+                        >
+                          {{ source }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="filteredArticles.length === 0"
+                    class="alert alert-info"
+                    role="alert"
+                  >
+                    No articles found
+                  </div>
+
+                  <div
+                    v-for="article in filteredArticles"
+                    :key="article.id"
+                    class="article-item"
+                  >
+                    <div class="article-header">
+                      <h6>{{ article.title }}</h6>
+                      <span class="badge bg-secondary">{{ article.source }}</span>
+                      <span class="article-date">{{ article.date }}</span>
+                    </div>
+                    <p class="article-content">{{ article.content.substring(0, 200) }}...</p>
+                    <a :href="article.link" target="_blank" class="btn btn-sm btn-outline-primary"
+                      >View Full Article</a
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue.js 3 -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.js"></script>
+
+    <!-- API Client -->
+    <script src="/static/js/api.js"></script>
+
+    <!-- Vue App -->
+    <script src="/static/js/app.js"></script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

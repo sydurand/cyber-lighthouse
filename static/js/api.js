@@ -1,0 +1,89 @@
+/**
+ * API Client for Cyber-Lighthouse Dashboard
+ */
+
+class APIClient {
+  constructor(baseURL = "/api") {
+    this.baseURL = baseURL;
+  }
+
+  /**
+   * Generic fetch wrapper with error handling
+   */
+  async fetch(endpoint, options = {}) {
+    try {
+      const response = await fetch(`${this.baseURL}${endpoint}`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+        ...options,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`API Error: ${endpoint}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get latest alerts
+   */
+  async getAlerts(limit = 20, offset = 0) {
+    return this.fetch(`/alerts?limit=${limit}&offset=${offset}`);
+  }
+
+  /**
+   * Get synthesis reports
+   */
+  async getReports(limit = 10, days = 7) {
+    return this.fetch(`/reports?limit=${limit}&days=${days}`);
+  }
+
+  /**
+   * Get statistics
+   */
+  async getStatistics() {
+    return this.fetch("/stats");
+  }
+
+  /**
+   * Search and filter articles
+   */
+  async searchArticles(options = {}) {
+    const params = new URLSearchParams({
+      limit: options.limit || 20,
+      offset: options.offset || 0,
+      ...(options.search && { search: options.search }),
+      ...(options.source && { source: options.source }),
+      ...(options.date_from && { date_from: options.date_from }),
+      ...(options.date_to && { date_to: options.date_to }),
+    });
+
+    return this.fetch(`/articles?${params.toString()}`);
+  }
+
+  /**
+   * Get system status
+   */
+  async getSystemStatus() {
+    return this.fetch("/system");
+  }
+
+  /**
+   * Health check
+   */
+  async healthCheck() {
+    return this.fetch("/health", { method: "GET" }).catch(() => {
+      return { status: "offline" };
+    });
+  }
+}
+
+// Export for Vue
+const apiClient = new APIClient();
