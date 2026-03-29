@@ -39,7 +39,20 @@
   </head>
 
   <body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 min-h-screen">
-    <div id="app">
+    <div id="app" v-cloak>
+      <!-- Loading screen -->
+      <div v-if="!statistics" class="flex items-center justify-center min-h-screen">
+        <div class="text-center">
+          <div class="mb-4">
+            <i class="fas fa-spinner animate-spin text-4xl text-blue-400"></i>
+          </div>
+          <p class="text-slate-300 text-lg">Loading Cyber-Lighthouse Dashboard...</p>
+          <p class="text-slate-500 text-sm mt-2">Fetching articles and reports...</p>
+        </div>
+      </div>
+
+      <!-- Main content (shown when data is loaded) -->
+      <div v-show="statistics">
       <!-- Navigation -->
       <nav class="sticky top-0 z-50 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-700 backdrop-blur-md bg-opacity-90">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -274,6 +287,8 @@
           </div>
         </div>
       </div>
+      </div>
+      <!-- End of main content -->
     </div>
 
     <!-- Vue.js 3 -->

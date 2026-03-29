@@ -1,6 +1,7 @@
 """FastAPI web server for Cyber-Lighthouse dashboard."""
 import os
 import sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,11 +10,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import router
 from logging_config import logger
 
-# Create FastAPI app
+
+# Lifespan context manager for startup and shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle."""
+    # Startup
+    logger.info("Cyber-Lighthouse Dashboard server starting...")
+    logger.info(f"API documentation available at http://localhost:8000/docs")
+    yield
+    # Shutdown
+    logger.info("Cyber-Lighthouse Dashboard server shutting down...")
+
+
+# Create FastAPI app with lifespan
 app = FastAPI(
     title="Cyber-Lighthouse Dashboard",
     description="Web dashboard for threat intelligence monitoring",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware for local access
@@ -52,19 +67,6 @@ async def root():
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "Cyber-Lighthouse Dashboard"}
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Run on server startup."""
-    logger.info("Cyber-Lighthouse Dashboard server starting...")
-    logger.info(f"API documentation available at http://localhost:8000/docs")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Run on server shutdown."""
-    logger.info("Cyber-Lighthouse Dashboard server shutting down...")
 
 
 def main():

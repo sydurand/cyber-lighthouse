@@ -32,6 +32,11 @@
 
 /* Apply animations */
 [v-cloak] {
+  display: initial;
+}
+
+/* Hide cloak content once Vue is ready */
+[v-cloak] > *:not(.flex) {
   display: none;
 }
 
@@ -124,6 +129,7 @@ button {
 
 .animate-spin {
   animation: spin 1s linear infinite;
+  display: inline-block;
 }
 
 /* Backdrop blur support */
