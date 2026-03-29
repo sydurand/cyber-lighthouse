@@ -45,7 +45,8 @@ async def get_alerts(
         List of recent articles with their analysis
     """
     try:
-        articles = db.get_unprocessed_articles()
+        # Get all articles (not just unprocessed) for display in dashboard
+        articles = db.get_all_articles()
 
         # Sort by date descending and apply pagination
         articles_sorted = sorted(
@@ -225,7 +226,8 @@ async def search_articles(
         Filtered list of articles
     """
     try:
-        articles = db.get_unprocessed_articles()
+        # Get all articles for searching/filtering
+        articles = db.get_all_articles()
 
         # Apply filters
         filtered = articles
