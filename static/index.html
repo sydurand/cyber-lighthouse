@@ -192,8 +192,7 @@
                   <h4 class="text-lg font-bold text-white">{{ report.generated_date }}</h4>
                   <span class="text-sm text-slate-400">{{ report.articles_count }} articles</span>
                 </div>
-                <div class="text-slate-300 text-sm whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
-                  {{ report.report_content }}
+                <div class="markdown-content max-h-96 overflow-y-auto text-slate-300 text-sm" v-html="renderMarkdown(report.report_content)">
                 </div>
               </div>
             </div>
@@ -279,6 +278,9 @@
 
     <!-- Vue.js 3 -->
     <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.js"></script>
+
+    <!-- Markdown-it for rendering markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.umd.js"></script>
 
     <!-- API Client -->
     <script src="/static/js/api.js"></script>

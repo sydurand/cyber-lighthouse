@@ -247,6 +247,67 @@ img {
   }
 }
 
+/* Markdown Content Styling */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  @apply text-white font-bold mt-4 mb-2;
+}
+
+.markdown-content h1 {
+  @apply text-2xl;
+}
+
+.markdown-content h2 {
+  @apply text-xl text-cyan-300;
+}
+
+.markdown-content h3 {
+  @apply text-lg text-blue-300;
+}
+
+.markdown-content p {
+  @apply mb-3 leading-relaxed;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply ml-4 mb-3;
+}
+
+.markdown-content li {
+  @apply mb-2;
+}
+
+.markdown-content strong,
+.markdown-content b {
+  @apply font-bold text-cyan-300;
+}
+
+.markdown-content em,
+.markdown-content i {
+  @apply italic text-slate-200;
+}
+
+.markdown-content code {
+  @apply bg-slate-900 text-emerald-300 px-2 py-1 rounded font-mono text-xs;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-cyan-500 pl-4 italic text-slate-400 my-4;
+}
+
+.markdown-content hr {
+  @apply border-slate-700 my-4;
+}
+
+.markdown-content a {
+  @apply text-blue-400 hover:text-blue-300 underline;
+}
+
 /* Print styles */
 @media print {
   .no-print {

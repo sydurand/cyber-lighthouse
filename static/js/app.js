@@ -175,6 +175,19 @@ const app = createApp({
       }, 30000);
     };
 
+    // Markdown renderer
+    const md = window.markdownit({
+      html: true,
+      linkify: false,
+      typographer: false,
+      breaks: true,
+    });
+
+    const renderMarkdown = (content) => {
+      if (!content) return "";
+      return md.render(content);
+    };
+
     // Watchers
     watch(alertsOffset, () => {
       refreshData();
@@ -201,6 +214,7 @@ const app = createApp({
       filteredArticles,
       refreshData,
       updateCharts,
+      renderMarkdown,
     };
   },
 });
