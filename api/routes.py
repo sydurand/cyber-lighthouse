@@ -103,24 +103,33 @@ async def get_reports(
     try:
         reports = []
 
-        # Try to get synthesis report from cache
-        # The cache stores synthesis reports keyed by article hash
-        cache_stats = cache.get_stats()
+        # Get synthesis reports from cache
+        # The cache stores synthesis reports separately
+        import json
+        from pathlib import Path
 
-        # For now, we create a report response from the latest synthesis
-        # In a full implementation, we'd store reports separately
-        if cache_stats.get("synthesis_cache_size", 0) > 0:
-            # Get a sample of cached synthesis
-            report = ReportResponse(
-                report_content="Daily synthesis report from cached data",
-                articles_count=0,
-                generated_date=datetime.now().strftime("%Y-%m-%d"),
-            )
-            reports.append(report)
+        cache_file = Path("cache/gemini_responses.json")
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+
+                # Extract all synthesis reports
+                for key, entry in cache_data.items():
+                    if entry.get('type') == 'synthesis':
+                        report = ReportResponse(
+                            report_content=entry.get('content', 'Report not available'),
+                            articles_count=entry.get('articles_count', 0),
+                            generated_date=entry.get('generated_date', datetime.now().strftime("%Y-%m-%d")),
+                        )
+                        reports.append(report)
+            except (json.JSONDecodeError, IOError):
+                pass
 
         return ReportsListResponse(reports=reports, total_count=len(reports))
 
     except Exception as e:
+        logger.error(f"Error fetching reports: {e}")
         return ReportsListResponse(reports=[], total_count=0)
 
 
