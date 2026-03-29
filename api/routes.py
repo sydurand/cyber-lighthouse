@@ -31,14 +31,14 @@ call_counter = get_call_counter()
 
 @router.get("/alerts", response_model=AlertsListResponse)
 async def get_alerts(
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=10000),
     offset: int = Query(0, ge=0),
 ) -> AlertsListResponse:
     """
     Get latest articles (real-time alerts).
 
     Args:
-        limit: Number of alerts to return (max 100)
+        limit: Number of alerts to return (max 10000)
         offset: Number of alerts to skip
 
     Returns:
@@ -207,7 +207,7 @@ async def search_articles(
     source: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=10000),
     offset: int = Query(0, ge=0),
 ) -> ArticlesListResponse:
     """
@@ -218,7 +218,7 @@ async def search_articles(
         source: Filter by source
         date_from: Start date (YYYY-MM-DD)
         date_to: End date (YYYY-MM-DD)
-        limit: Number of articles to return
+        limit: Number of articles to return (max 10000)
         offset: Number of articles to skip
 
     Returns:
