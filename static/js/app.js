@@ -175,24 +175,48 @@ const app = createApp({
       }, 30000);
     };
 
-    // Markdown renderer
-    let md = null;
-    const initMarkdown = () => {
-      if (window.markdownit) {
-        md = window.markdownit({
-          html: true,
-          linkify: false,
-          typographer: false,
-          breaks: true,
-        });
-      }
-    };
-
+    // Simple markdown-like renderer
     const renderMarkdown = (content) => {
       if (!content) return "";
-      if (!md) initMarkdown();
-      if (!md) return content; // Fallback if markdown-it still not loaded
-      return md.render(content);
+
+      // Try to use markdown-it if available
+      if (typeof window.markdownit === 'function') {
+        try {
+          const md = window.markdownit({
+            html: true,
+            linkify: true,
+            breaks: true,
+          });
+          return md.render(content);
+        } catch (e) {
+          console.error('Error rendering markdown:', e);
+        }
+      }
+
+      // Fallback: simple formatting
+      let html = escapeHtml(content);
+
+      // Convert bold **text** to <strong>
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+      // Convert italic *text* to <em>
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+      // Convert headers # to <h2>, ## to <h3>, etc
+      html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+      html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+
+      // Convert newlines to <br>
+      html = html.replace(/\n/g, '<br>');
+
+      return html;
+    };
+
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     };
 
     // Watchers
@@ -202,7 +226,6 @@ const app = createApp({
 
     // Lifecycle
     onMounted(() => {
-      initMarkdown();
       refreshData();
       autoRefresh();
     });
