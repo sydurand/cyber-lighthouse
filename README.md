@@ -45,6 +45,8 @@ Complete documentation and guides are in the `docs/` directory:
 
 - **[MAINTENANCE.md](docs/MAINTENANCE.md)** - Maintenance, backups, and troubleshooting
 
+- **[VERSION_BUMPING.md](docs/VERSION_BUMPING.md)** - Version management and releases
+
 ## Configuration
 
 Set these in `.env` (optional, sensible defaults provided):
@@ -160,6 +162,12 @@ python server.py  # Visit http://localhost:8000
 python reset.py  # Interactive reset with confirmation
 ```
 See [RESET_GUIDE.md](docs/RESET_GUIDE.md) for details.
+
+### Bump Version
+```bash
+python bump_version.py [major|minor|patch]
+```
+See [VERSION_BUMPING.md](docs/VERSION_BUMPING.md) for details.
 
 ## Error Handling
 
