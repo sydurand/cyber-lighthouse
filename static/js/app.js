@@ -17,6 +17,8 @@ const app = createApp({
     const searchQuery = ref("");
     const filterSource = ref("");
     const alertsOffset = ref(0);
+    const filterStats = ref(null);
+    const trendingTags = ref({});
 
     // Charts
     let chartBySource = null;
@@ -94,6 +96,10 @@ const app = createApp({
         // Deduplicate alerts by similar title
         const rawAlerts = alertsData.alerts || [];
         alerts.value = deduplicateAlerts(rawAlerts);
+
+        // Get filter stats and trending tags
+        filterStats.value = alertsData.filter_stats || null;
+        trendingTags.value = alertsData.filter_stats?.trending_tags || {};
 
         reports.value = reportsData.reports || [];
         statistics.value = statsData;
@@ -274,6 +280,8 @@ const app = createApp({
       searchQuery,
       filterSource,
       alertsOffset,
+      filterStats,
+      trendingTags,
       uniqueSources,
       filteredArticles,
       refreshData,

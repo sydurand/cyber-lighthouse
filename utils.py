@@ -244,6 +244,131 @@ Respond with only "YES" or "NO"."""
         return is_relevant
 
 
+def extract_tags_with_gemini(title: str, analysis: str) -> list:
+    """
+    Extract security tags from article title and analysis using AI.
+
+    Returns list of relevant security tags (e.g., #CVE-2026-1234, #Ransomware, #Patch)
+    """
+    if not title or not analysis:
+        return []
+
+    # Check cache first
+    cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+    if cache_key in _relevance_cache:
+        return _relevance_cache[cache_key]
+
+    try:
+        from google import genai
+        from google.genai import types
+        from config import Config
+
+        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+
+        prompt = f"""Article Title: {title}
+
+Analysis: {analysis[:500]}
+
+Extract 3-5 security tags that summarize the threat/vulnerability/incident type.
+Use format: #TagName (no spaces, use PascalCase)
+
+Examples of good tags:
+- #CVE-2026-1234
+- #Ransomware
+- #CriticalPatch
+- #ZeroDay
+- #Healthcare
+- #DataBreach
+- #Malware
+- #Phishing
+- #SupplyChain
+
+Return ONLY the tags, one per line, no other text."""
+
+        instruction = """You are a security analyst. Extract 3-5 concise, specific security tags
+        that categorize the threat type, vulnerability class, or attack vector."""
+
+        logger.debug(f"Extracting tags for: {title[:50]}...")
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                temperature=0.3,
+            ),
+        )
+
+        # Parse tags from response
+        tags = []
+        for line in response.text.strip().split('\n'):
+            tag = line.strip()
+            if tag.startswith('#'):
+                tags.append(tag)
+            elif tag and not tag.startswith('-'):
+                tags.append(f"#{tag}")
+
+        tags = tags[:5]  # Limit to 5 tags
+
+        # Cache the result
+        _relevance_cache[cache_key] = tags
+
+        logger.debug(f"Extracted tags: {tags}")
+        return tags
+
+    except Exception as e:
+        logger.warning(f"Tag extraction failed for '{title[:50]}...': {e}")
+        # Fallback to basic tag extraction
+        fallback_tags = []
+        text = f"{title} {analysis}".lower()
+
+        tag_keywords = {
+            "#CVE": "cve",
+            "#Ransomware": "ransomware",
+            "#ZeroDay": "zero-day",
+            "#CriticalPatch": "critical",
+            "#DataBreach": "breach",
+            "#Malware": "malware",
+            "#Phishing": "phishing",
+            "#Healthcare": "healthcare",
+            "#SupplyChain": "supply chain",
+        }
+
+        for tag, keyword in tag_keywords.items():
+            if keyword in text and tag not in fallback_tags:
+                fallback_tags.append(tag)
+
+        return fallback_tags[:5]
+
+
+def get_trending_tags(alerts: list) -> dict:
+    """
+    Analyze trending tags across alerts.
+
+    Returns dict with tag counts and percentages.
+    """
+    tag_counts = {}
+
+    for alert in alerts:
+        tags = alert.get("tags", [])
+        for tag in tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    # Sort by count and return top 10
+    trending = dict(sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:10])
+
+    # Calculate total for percentages
+    total = sum(trending.values())
+    trending_with_percent = {
+        tag: {
+            "count": count,
+            "percentage": (count / total * 100) if total > 0 else 0
+        }
+        for tag, count in trending.items()
+    }
+
+    return trending_with_percent
+
+
 def deduplicate_alerts_with_gemini(alerts: list) -> dict:
     """
     Deduplicate alerts using AI semantic analysis.

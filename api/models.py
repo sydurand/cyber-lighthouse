@@ -29,6 +29,7 @@ class AlertResponse(BaseModel):
     link: str
     date: str
     analysis: Optional[str] = None
+    tags: List[str] = Field(default_factory=list, description="Security tags extracted from alert")
     timestamp: datetime = Field(default_factory=datetime.now)
 
     class Config:
@@ -96,6 +97,17 @@ class SearchArticlesRequest(BaseModel):
     offset: int = 0
 
 
+class FilterStats(BaseModel):
+    """Statistics about filtering and deduplication."""
+
+    total_articles_in_db: int = Field(description="Total articles in database")
+    articles_after_filter: int = Field(description="Articles after relevance filtering")
+    filtered_out: int = Field(description="Articles removed by relevance filter")
+    articles_after_dedup: int = Field(description="Articles after deduplication")
+    duplicates_grouped: int = Field(description="Duplicate articles grouped")
+    trending_tags: Dict[str, Dict[str, Any]] = Field(description="Top trending security tags with counts")
+
+
 class AlertsListResponse(BaseModel):
     """Response model for alerts list."""
 
@@ -103,6 +115,7 @@ class AlertsListResponse(BaseModel):
     total_count: int
     limit: int
     offset: int
+    filter_stats: Optional[FilterStats] = None
 
 
 class ArticlesListResponse(BaseModel):

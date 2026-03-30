@@ -8,7 +8,13 @@ import os
 from database import Database
 from cache import get_cache
 from optimization import get_call_counter
-from utils import detect_similar_articles, deduplicate_alerts_with_gemini, is_relevant_security_article
+from utils import (
+    detect_similar_articles,
+    deduplicate_alerts_with_gemini,
+    is_relevant_security_article,
+    extract_tags_with_gemini,
+    get_trending_tags,
+)
 from .models import (
     AlertsListResponse,
     AlertResponse,
@@ -20,6 +26,7 @@ from .models import (
     ArticlesListResponse,
     ArticleResponse,
     ErrorResponse,
+    FilterStats,
 )
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -45,11 +52,12 @@ async def get_alerts(
         deduplicate: If True, use AI to identify and deduplicate similar alerts
 
     Returns:
-        List of recent articles with their analysis
+        List of recent articles with their analysis and tags
     """
     try:
         # Get all articles (not just unprocessed) for display in dashboard
         articles = db.get_all_articles()
+        total_articles = len(articles)
 
         # Sort by date descending
         articles_sorted = sorted(
@@ -58,16 +66,21 @@ async def get_alerts(
 
         # Build alert objects with analysis, filtering out non-relevant content
         all_alerts = []
+        filtered_count = 0
         for article in articles_sorted:
             title = article.get("title", "")
             content = article.get("content", "")
 
             # Skip articles that are not relevant security content
             if not is_relevant_security_article(title, content):
+                filtered_count += 1
                 continue
 
             # Try to get analysis from cache
             analysis = cache.get_analysis(title, content)
+
+            # Extract tags from article
+            tags = extract_tags_with_gemini(title, analysis if analysis else "")
 
             alert = AlertResponse(
                 id=article.get("id", 0),
@@ -76,8 +89,12 @@ async def get_alerts(
                 link=article.get("link", ""),
                 date=article.get("date", ""),
                 analysis=analysis,
+                tags=tags,
             )
             all_alerts.append(alert)
+
+        # Track deduplication stats
+        dedup_count = 0
 
         # Apply AI deduplication if requested
         if deduplicate and len(all_alerts) > 1:
@@ -90,21 +107,43 @@ async def get_alerts(
                     "source": a.source,
                     "date": a.date,
                     "link": a.link,
+                    "tags": a.tags,
                 }
                 for a in all_alerts
             ]
             dedup_result = deduplicate_alerts_with_gemini(alerts_dict)
             primary_alert_ids = set(dedup_result["groups"].values())
+            dedup_count = len(all_alerts) - len(primary_alert_ids)
             all_alerts = [a for a in all_alerts if a.id in primary_alert_ids]
+
+        # Get trending tags
+        trending_tags = get_trending_tags([
+            {
+                "id": a.id,
+                "tags": a.tags,
+            }
+            for a in all_alerts
+        ])
 
         # Apply pagination after deduplication
         paginated = all_alerts[offset : offset + limit]
+
+        # Build filter statistics
+        filter_stats = FilterStats(
+            total_articles_in_db=total_articles,
+            articles_after_filter=len(all_alerts) + dedup_count,
+            filtered_out=filtered_count,
+            articles_after_dedup=len(all_alerts),
+            duplicates_grouped=dedup_count,
+            trending_tags=trending_tags,
+        )
 
         return AlertsListResponse(
             alerts=paginated,
             total_count=len(all_alerts),
             limit=limit,
             offset=offset,
+            filter_stats=filter_stats,
         )
 
     except Exception as e:
