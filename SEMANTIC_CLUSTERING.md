@@ -41,6 +41,40 @@ sqlite3 articles.db "SELECT COUNT(*) FROM topics;"
 | utils.py | Web scraping, Teams notifications, clustering functions |
 | real_time.py | Topic clustering workflow + throttling |
 | ai_tasks.py | Rapid alert generation for new topics |
+| daily_summary.py | **NEW**: Daily report generation & archival |
+
+## Complete Workflow
+
+### Morning: Set Up
+```bash
+# Start the real-time monitoring
+python real_time.py --verbose &
+
+# Start the dashboard
+python server.py &
+```
+
+### Throughout the Day
+- Articles are fetched from RSS feeds every few minutes
+- New articles are scraped if RSS summaries are short
+- Articles are clustered into semantic topics
+- Teams receives notifications for new topics
+
+### Evening: Generate Daily Report
+```bash
+# Generate and archive daily summary
+python daily_summary.py
+
+# View the report
+cat reports/summary_$(date +%Y-%m-%d).md
+
+# Check Teams for notification
+```
+
+### Database Maintenance (Automatic)
+- Topics older than 72 hours are marked as processed
+- Reports are archived in `reports/` directory
+- All data remains in SQLite for audit trails
 
 ## Configuration
 
@@ -106,16 +140,29 @@ article_topics (article_id, topic_id)
 python -c "from config import Config; print(f'Threshold: {Config.SEMANTIC_SIMILARITY_THRESHOLD}')"
 ```
 
-### Check topics
+### Check topics and articles
 ```bash
-sqlite3 articles.db "SELECT * FROM topics LIMIT 5;"
+sqlite3 articles.db "SELECT COUNT(*) FROM topics;"
 sqlite3 articles.db "SELECT COUNT(*) FROM article_topics;"
+sqlite3 articles.db "SELECT main_title FROM topics LIMIT 5;"
 ```
 
-### Enable debug logging
+### Test real-time monitoring
 ```bash
 export LOG_LEVEL=DEBUG
 python real_time.py --verbose
+```
+
+### Test daily summary generation
+```bash
+python daily_summary.py
+```
+Should output a report and archive to `reports/summary_YYYY-MM-DD.md`
+
+### Verify reports archive
+```bash
+ls -la reports/
+cat reports/summary_*.md
 ```
 
 ## Graceful Degradation
