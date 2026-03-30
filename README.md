@@ -41,6 +41,8 @@ Complete documentation and guides are in the `docs/` directory:
 
 - **[WEB_DASHBOARD_GUIDE.md](docs/WEB_DASHBOARD_GUIDE.md)** - Dashboard usage (optional)
 
+- **[RESET_GUIDE.md](docs/RESET_GUIDE.md)** - Data reset and cleanup
+
 ## Configuration
 
 Set these in `.env` (optional, sensible defaults provided):
@@ -150,6 +152,12 @@ python server.py  # Visit http://localhost:8000
 # Daily at 8:00 AM
 0 8 * * * cd /path/to/Cyber-Lighthouse && python daily_summary.py
 ```
+
+### Reset All Data
+```bash
+python reset.py  # Interactive reset with confirmation
+```
+See [RESET_GUIDE.md](docs/RESET_GUIDE.md) for details.
 
 ## Error Handling
 
