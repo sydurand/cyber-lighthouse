@@ -8,197 +8,154 @@ Real-time threat intelligence monitoring with semantic clustering, web scraping,
 # Install dependencies
 uv pip install trafilatura sentence-transformers scikit-learn
 
-# Start real-time monitoring
+# Configure
+export GOOGLE_API_KEY=your-key
+export TEAMS_WEBHOOK_URL=optional-webhook
+
+# Run real-time monitoring
 python real_time.py --verbose
 
-# Generate daily summary (once per day)
+# Generate daily report
 python daily_summary.py
 ```
 
 ## Features
 
-- **Real-time RSS monitoring** - Continuous feed processing from CISA, SANS ISC, BleepingComputer
-- **Web content enhancement** - Scrapes full articles when RSS summaries are short
-- **Semantic clustering** - Groups articles into topics using ML embeddings
-- **AI-powered analysis** - Gemini analysis for new articles and topics
-- **Teams integration** - Real-time notifications and daily reports
-- **Daily synthesis** - Executive-level threat intelligence reports
-- **CISA correlation** - Cross-references against Known Exploited Vulnerabilities
-- **Local archival** - Reports saved as timestamped markdown files
+- **Real-time RSS monitoring** - CISA, SANS ISC, BleepingComputer feeds
+- **Web scraping** - Full article extraction when RSS summaries are short
+- **Semantic clustering** - ML-powered topic grouping
+- **AI analysis** - Gemini 2.5-flash powered threat assessment
+- **Teams integration** - Real-time notifications
+- **Daily synthesis** - Executive reports with CISA correlation
+- **Production-ready** - Error handling, logging, caching
 
-## Documentation
+## Usage
 
-Complete documentation and guides are in the `docs/` directory:
-
-- **[SEMANTIC_CLUSTERING.md](docs/SEMANTIC_CLUSTERING.md)** - Main implementation guide
-  - Quick start, configuration, workflow, testing
-
-- **[SETUP.md](docs/SETUP.md)** - Initial setup and environment configuration
-
-- **[OPTIMIZATION_GUIDE.md](docs/OPTIMIZATION_GUIDE.md)** - Performance tuning
-
-- **[PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)** - Architecture overview
-
-- **[WEB_DASHBOARD_GUIDE.md](docs/WEB_DASHBOARD_GUIDE.md)** - Dashboard usage (optional)
-
-- **[RESET_GUIDE.md](docs/RESET_GUIDE.md)** - Data reset and cleanup
-
-- **[MAINTENANCE.md](docs/MAINTENANCE.md)** - Maintenance, backups, and troubleshooting
-
-- **[VERSION_BUMPING.md](docs/VERSION_BUMPING.md)** - Version management and releases
-
-## Configuration
-
-Set these in `.env` (optional, sensible defaults provided):
-
-```bash
-# Required
-GOOGLE_API_KEY=your-gemini-api-key
-
-# Web scraping
-TRAFILATURA_TIMEOUT=30
-MIN_CONTENT_LENGTH_FOR_SCRAPING=300
-
-# Semantic clustering
-SEMANTIC_SIMILARITY_THRESHOLD=0.70
-API_DELAY_BETWEEN_REQUESTS=5
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-
-# Teams notifications (optional)
-TEAMS_WEBHOOK_URL=https://your-webhook-url
-
-# Logging
-LOG_LEVEL=INFO
-LOG_FILE=logs/cyber_lighthouse.log
-```
-
-## Architecture
-
-```
-Real-Time Pipeline:
-  RSS Feeds → Content Scraping → AI Analysis → Topic Clustering
-             ↓
-         SQLite Database
-             ↓
-         Teams Notification
-
-Daily Summary Pipeline:
-  Unprocessed Topics → CISA Enrichment → Report Generation
-         ↓
-    Markdown Archive → Teams Notification
-```
-
-## Core Components
-
-| File | Purpose |
-|------|---------|
-| `config.py` | Configuration management |
-| `database.py` | SQLite abstraction + topic schema |
-| `utils.py` | Utility functions (scraping, clustering, Teams) |
-| `real_time.py` | Real-time RSS monitoring with clustering |
-| `daily_summary.py` | Daily report generation and archival |
-| `ai_tasks.py` | AI-powered analysis tasks |
-| `server.py` | FastAPI dashboard (optional) |
-
-## Usage Examples
-
-### Monitor a single run
+### Real-Time Monitoring
 ```bash
 python real_time.py --verbose
 ```
+Monitors RSS feeds, clusters articles, sends Teams notifications.
 
-### Generate daily executive report
+### Daily Reports
 ```bash
 python daily_summary.py
 ```
+Generates executive summary, archives to `reports/summary_YYYY-MM-DD.md`
 
-### View archived reports
+### Reset Data
 ```bash
-ls reports/
-cat reports/summary_2026-03-30.md
+python reset.py
+```
+Safe reset with confirmation - removes database, cache, logs, reports.
+
+### Version Management
+```bash
+./test_bump.sh                    # Preview version bump
+python bump_version.py patch      # Bump patch (0.1.0 → 0.1.1)
+python bump_version.py minor      # Bump minor (0.1.0 → 0.2.0)
+python bump_version.py major      # Bump major (0.1.0 → 1.0.0)
 ```
 
-### Check database
-```bash
-sqlite3 articles.db "SELECT COUNT(*) FROM topics;"
-```
-
-## Workflow
-
-1. **Real-time**: Articles scraped and clustered continuously
-2. **Daily**: Unprocessed topics aggregated into executive summary
-3. **Archive**: Reports saved for audit trail
-4. **Cleanup**: Old topics marked as processed after 72 hours
-
-## Testing
-
-```bash
-# Verify installation
-python -c "from config import Config; print(f'✓ Config loaded: {Config.SEMANTIC_SIMILARITY_THRESHOLD}')"
-
-# Run with debug logging
-export LOG_LEVEL=DEBUG
-python real_time.py --verbose
-
-# Check topics in database
-sqlite3 articles.db "SELECT main_title FROM topics LIMIT 5;"
-```
-
-## Optional Features
-
-### Dashboard
+### Web Dashboard (Optional)
 ```bash
 python server.py  # Visit http://localhost:8000
 ```
 
-### Scheduled Daily Reports (Cron)
+## Configuration
+
+Set in `.env`:
 ```bash
-# Daily at 8:00 AM
-0 8 * * * cd /path/to/Cyber-Lighthouse && python daily_summary.py
+# Required
+GOOGLE_API_KEY=your-gemini-api-key
+
+# Optional
+TEAMS_WEBHOOK_URL=https://your-teams-webhook
+TRAFILATURA_TIMEOUT=30
+SEMANTIC_SIMILARITY_THRESHOLD=0.70
+MIN_CONTENT_LENGTH_FOR_SCRAPING=300
+API_DELAY_BETWEEN_REQUESTS=5
+LOG_LEVEL=INFO
 ```
 
-### Reset All Data
-```bash
-python reset.py  # Interactive reset with confirmation
-```
-See [RESET_GUIDE.md](docs/RESET_GUIDE.md) for details.
+## Database
 
-### Bump Version
-```bash
-python bump_version.py [major|minor|patch]
+SQLite with semantic clustering:
+- `articles` - Article storage
+- `topics` - Semantic topic clusters
+- `article_topics` - Article-topic mapping
+
+## Architecture
+
 ```
-See [VERSION_BUMPING.md](docs/VERSION_BUMPING.md) for details.
+RSS Feeds → Scraping → AI Analysis → Topic Clustering
+              ↓
+         Database
+              ↓
+         Teams Notifications
+
+Daily: Topics → Synthesis → CISA Correlation → Report Archive
+```
+
+## Documentation
+
+- **[docs/SEMANTIC_CLUSTERING.md](docs/SEMANTIC_CLUSTERING.md)** - Implementation details
+- **[docs/RESET_GUIDE.md](docs/RESET_GUIDE.md)** - Data reset procedure
+- **[docs/VERSION_BUMPING.md](docs/VERSION_BUMPING.md)** - Version management
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `real_time.py` | Real-time monitoring with clustering |
+| `daily_summary.py` | Daily executive reports |
+| `reset.py` | Safe data reset utility |
+| `bump_version.py` | Semantic version management |
+| `server.py` | Web dashboard |
+
+## Common Commands
+
+```bash
+# Monitor
+tail -f logs/cyber_lighthouse.log
+
+# Check database
+sqlite3 articles.db "SELECT COUNT(*) FROM articles;"
+
+# Backup
+cp articles.db articles.db.backup.$(date +%Y%m%d)
+
+# Optimize database
+sqlite3 articles.db "VACUUM;"
+
+# View reports
+ls reports/summary_*.md
+```
+
+## Deployment Checklist
+
+- [ ] Configure .env with GOOGLE_API_KEY
+- [ ] Test real_time.py --verbose
+- [ ] Test daily_summary.py
+- [ ] Test reset.py
+- [ ] Set LOG_LEVEL=INFO
+- [ ] Configure backup strategy
+- [ ] Set up cron for daily_summary.py
+- [ ] Monitor logs for errors
+- [ ] Verify Teams notifications
 
 ## Error Handling
 
 All optional features gracefully degrade:
-- **No trafilatura**: Uses RSS content only
-- **No sentence-transformers**: All articles treated as new topics
-- **No Teams webhook**: Logs errors, continues processing
-- **Rate limit**: Uses basic alert format, continues
-
-## Database
-
-Two SQLite tables track topics and their articles:
-- `topics` - Semantic topic clusters
-- `article_topics` - Many-to-many relationship
-
-Original `articles` table unchanged for backward compatibility.
-
-## Performance
-
-- Embedding model: ~80MB (loaded once)
-- Per-article latency: 50-100ms for embedding
-- Database: ~1MB per 10k articles
-- API savings: Only new topics trigger Gemini calls
-
-## Contributing
-
-For issues or improvements:
-1. Check `logs/cyber_lighthouse.log` for error details
-2. Enable `LOG_LEVEL=DEBUG` for verbose output
-3. See documentation in `docs/` directory
+- Missing `trafilatura`: Uses RSS content only
+- Missing `sentence-transformers`: Treats articles as new topics
+- Missing Teams webhook: Logs errors, continues
+- Rate limits: Uses basic format, continues
 
 ## License
 
-[Add your license here]
+[Add your license]
+
+## Contributing
+
+See docs/ for detailed guides.
