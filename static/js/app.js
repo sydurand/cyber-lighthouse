@@ -176,15 +176,22 @@ const app = createApp({
     };
 
     // Markdown renderer
-    const md = window.markdownit({
-      html: true,
-      linkify: false,
-      typographer: false,
-      breaks: true,
-    });
+    let md = null;
+    const initMarkdown = () => {
+      if (window.markdownit) {
+        md = window.markdownit({
+          html: true,
+          linkify: false,
+          typographer: false,
+          breaks: true,
+        });
+      }
+    };
 
     const renderMarkdown = (content) => {
       if (!content) return "";
+      if (!md) initMarkdown();
+      if (!md) return content; // Fallback if markdown-it still not loaded
       return md.render(content);
     };
 
@@ -195,6 +202,7 @@ const app = createApp({
 
     // Lifecycle
     onMounted(() => {
+      initMarkdown();
       refreshData();
       autoRefresh();
     });
