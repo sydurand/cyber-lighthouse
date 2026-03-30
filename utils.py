@@ -97,3 +97,148 @@ def format_log_message(level: str, message: str) -> str:
     }
     icon = icons.get(level.lower(), "•")
     return f"{icon} {message}"
+
+
+def detect_similar_articles(articles: list) -> dict:
+    """
+    Group similar articles using semantic similarity.
+
+    Returns a dict where keys are article IDs and values are group IDs.
+    Articles with the same group ID are considered duplicates/similar.
+    """
+    if not articles or len(articles) < 2:
+        return {a.get("id"): a.get("id") for a in articles}
+
+    groups = {}
+    article_titles = {a.get("id"): a.get("title", "") for a in articles}
+
+    # Simple similarity: if titles share key words (case-insensitive)
+    # This is a fallback when AI is not available
+    for i, article1 in enumerate(articles):
+        if article1.get("id") in groups:
+            continue
+
+        group_id = article1.get("id")
+        groups[group_id] = group_id
+
+        title1_words = set(article1.get("title", "").lower().split())
+
+        # Compare with remaining articles
+        for article2 in articles[i + 1 :]:
+            if article2.get("id") in groups:
+                continue
+
+            title2_words = set(article2.get("title", "").lower().split())
+
+            # Calculate Jaccard similarity
+            if title1_words and title2_words:
+                intersection = len(title1_words & title2_words)
+                union = len(title1_words | title2_words)
+                similarity = intersection / union if union > 0 else 0
+
+                # If similarity > 60%, consider them similar
+                if similarity > 0.6:
+                    groups[article2.get("id")] = group_id
+
+    return groups
+
+
+def deduplicate_alerts_with_gemini(alerts: list) -> dict:
+    """
+    Deduplicate alerts using AI semantic analysis.
+
+    Groups semantically similar alerts together and returns primary alerts.
+    Uses Gemini to understand alert content beyond simple string matching.
+
+    Args:
+        alerts: List of alert dictionaries with 'id', 'title', 'analysis' fields
+
+    Returns:
+        Dict with 'primary_alerts' (deduplicated) and 'groups' (mapping of all alert IDs to group IDs)
+    """
+    if not alerts or len(alerts) < 2:
+        return {
+            "primary_alerts": alerts,
+            "groups": {a.get("id"): a.get("id") for a in alerts}
+        }
+
+    try:
+        from google import genai
+        from google.genai import types
+        from config import Config
+
+        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+
+        # Build deduplication prompt with alert summaries
+        alerts_summary = "\n".join([
+            f"Alert {i+1} (ID: {a.get('id')}): {a.get('title', '')}\nAnalysis: {a.get('analysis', '')}"
+            for i, a in enumerate(alerts[:20])  # Limit to 20 alerts to avoid token limits
+        ])
+
+        prompt = f"""Analyze these security alerts and identify which ones are duplicate or about the same incident:
+
+{alerts_summary}
+
+Respond with a JSON object mapping alert IDs to their group ID (the ID of the primary alert in that group):
+{{
+  "1": "1",
+  "2": "1",
+  "3": "3",
+  "4": "3",
+  ...
+}}
+
+Only respond with the JSON object, no other text."""
+
+        instruction = """You are a SOC analyst expert at identifying duplicate security alerts.
+        Alerts are duplicates if they report the same incident, CVE, vulnerability, or threat - even if wording differs.
+        Group semantically similar alerts together and return the grouping as JSON."""
+
+        logger.debug(f"Deduplicating {len(alerts)} alerts with Gemini...")
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                temperature=0.1,
+            ),
+        )
+
+        import json
+        response_text = response.text.strip()
+
+        # Extract JSON from response (handle markdown code blocks)
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+
+        groups = json.loads(response_text)
+
+        # Convert string keys to integers if needed
+        groups = {int(k) if isinstance(k, str) else k: int(v) if isinstance(v, str) else v
+                 for k, v in groups.items()}
+
+        # Add remaining alerts (beyond the 20 analyzed) to their own group
+        for alert in alerts[20:]:
+            alert_id = alert.get("id")
+            groups[alert_id] = alert_id
+
+        # Get primary alerts (one per group)
+        primary_ids = set(groups.values())
+        primary_alerts = [a for a in alerts if a.get("id") in primary_ids]
+
+        logger.info(f"Deduplication: {len(alerts)} alerts reduced to {len(primary_alerts)} primary alerts")
+
+        return {
+            "primary_alerts": primary_alerts,
+            "groups": groups
+        }
+
+    except Exception as e:
+        logger.warning(f"Gemini deduplication failed, using fallback: {e}")
+        # Fallback to keyword-based deduplication
+        return {
+            "primary_alerts": alerts,
+            "groups": {a.get("id"): a.get("id") for a in alerts}
+        }

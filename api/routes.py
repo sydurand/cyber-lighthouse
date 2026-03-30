@@ -8,6 +8,7 @@ import os
 from database import Database
 from cache import get_cache
 from optimization import get_call_counter
+from utils import detect_similar_articles, deduplicate_alerts_with_gemini
 from .models import (
     AlertsListResponse,
     AlertResponse,
@@ -33,6 +34,7 @@ call_counter = get_call_counter()
 async def get_alerts(
     limit: int = Query(20, ge=1, le=10000),
     offset: int = Query(0, ge=0),
+    deduplicate: bool = Query(False, description="Deduplicate similar alerts using AI"),
 ) -> AlertsListResponse:
     """
     Get latest articles (real-time alerts).
@@ -40,6 +42,7 @@ async def get_alerts(
     Args:
         limit: Number of alerts to return (max 10000)
         offset: Number of alerts to skip
+        deduplicate: If True, use AI to identify and deduplicate similar alerts
 
     Returns:
         List of recent articles with their analysis
@@ -48,14 +51,14 @@ async def get_alerts(
         # Get all articles (not just unprocessed) for display in dashboard
         articles = db.get_all_articles()
 
-        # Sort by date descending and apply pagination
+        # Sort by date descending
         articles_sorted = sorted(
             articles, key=lambda x: x.get("date", ""), reverse=True
         )
-        paginated = articles_sorted[offset : offset + limit]
 
-        alerts = []
-        for article in paginated:
+        # Build alert objects with analysis
+        all_alerts = []
+        for article in articles_sorted:
             # Try to get analysis from cache
             analysis = cache.get_analysis(article.get("title", ""), article.get("content", ""))
 
@@ -67,11 +70,32 @@ async def get_alerts(
                 date=article.get("date", ""),
                 analysis=analysis,
             )
-            alerts.append(alert)
+            all_alerts.append(alert)
+
+        # Apply AI deduplication if requested
+        if deduplicate and len(all_alerts) > 1:
+            # Convert to dict format for deduplication function
+            alerts_dict = [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "analysis": a.analysis,
+                    "source": a.source,
+                    "date": a.date,
+                    "link": a.link,
+                }
+                for a in all_alerts
+            ]
+            dedup_result = deduplicate_alerts_with_gemini(alerts_dict)
+            primary_alert_ids = set(dedup_result["groups"].values())
+            all_alerts = [a for a in all_alerts if a.id in primary_alert_ids]
+
+        # Apply pagination after deduplication
+        paginated = all_alerts[offset : offset + limit]
 
         return AlertsListResponse(
-            alerts=alerts,
-            total_count=len(articles_sorted),
+            alerts=paginated,
+            total_count=len(all_alerts),
             limit=limit,
             offset=offset,
         )
