@@ -217,6 +217,14 @@ class APICallCounter:
         self.last_reset = None
         self.total_calls_today = 0
 
+    def _check_and_reset_if_needed(self):
+        """Reset minute counter if a minute has passed."""
+        import time
+        current_time = time.time()
+        if self.last_reset is None or (current_time - self.last_reset) >= 60:
+            self.calls_this_minute = 0
+            self.last_reset = current_time
+
     def reset_minute(self):
         """Reset minute counter."""
         self.calls_this_minute = 0
@@ -229,12 +237,14 @@ class APICallCounter:
         Args:
             count: Number of calls made
         """
+        self._check_and_reset_if_needed()
         self.calls_this_minute += count
         self.total_calls_today += count
         logger.debug(f"API call recorded: {count} (minute: {self.calls_this_minute}, today: {self.total_calls_today})")
 
     def get_remaining_quota(self) -> int:
         """Get remaining API calls before hitting 5 req/min limit."""
+        self._check_and_reset_if_needed()
         return max(0, 5 - self.calls_this_minute)
 
     def can_make_call(self) -> bool:
