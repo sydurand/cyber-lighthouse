@@ -43,6 +43,8 @@ Complete documentation and guides are in the `docs/` directory:
 
 - **[RESET_GUIDE.md](docs/RESET_GUIDE.md)** - Data reset and cleanup
 
+- **[MAINTENANCE.md](docs/MAINTENANCE.md)** - Maintenance, backups, and troubleshooting
+
 ## Configuration
 
 Set these in `.env` (optional, sensible defaults provided):
