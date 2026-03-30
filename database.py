@@ -38,6 +38,31 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_date ON articles(date)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_source ON articles(source)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_processed ON articles(processed_for_daily)")
+
+                # Topics table for semantic clustering
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS topics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        main_title TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        processed_for_summary BOOLEAN DEFAULT 0
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topic_processed ON topics(processed_for_summary)")
+
+                # Article-Topic mapping table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS article_topics (
+                        article_id INTEGER NOT NULL,
+                        topic_id INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (article_id, topic_id),
+                        FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+                        FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_article_topic ON article_topics(topic_id)")
+
                 conn.commit()
             logger.debug(f"Database initialized: {self.db_file}")
         except sqlite3.Error as e:
@@ -209,3 +234,125 @@ class Database:
     def _hash_content(content: str) -> str:
         """Generate a hash of content for deduplication fallback."""
         return hashlib.sha256(content.encode()).hexdigest()
+
+    def create_topic(self, main_title: str) -> int:
+        """
+        Create a new topic for semantic clustering.
+
+        Args:
+            main_title: Representative title for the topic
+
+        Returns:
+            Topic ID if created successfully, None on error
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO topics (main_title)
+                    VALUES (?)
+                """, (main_title,))
+                conn.commit()
+                topic_id = cursor.lastrowid
+                logger.debug(f"Topic created: {main_title} (ID: {topic_id})")
+                return topic_id
+        except sqlite3.Error as e:
+            logger.error(f"Error creating topic: {e}")
+            return None
+
+    def add_article_to_topic(self, article_id: int, topic_id: int) -> bool:
+        """
+        Link an article to a topic.
+
+        Args:
+            article_id: Article ID
+            topic_id: Topic ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR IGNORE INTO article_topics (article_id, topic_id)
+                    VALUES (?, ?)
+                """, (article_id, topic_id))
+                conn.commit()
+                logger.debug(f"Article {article_id} linked to topic {topic_id}")
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Error linking article to topic: {e}")
+            return False
+
+    def get_topic_by_id(self, topic_id: int) -> dict:
+        """
+        Get topic details by ID.
+
+        Args:
+            topic_id: Topic ID
+
+        Returns:
+            Topic dict or None if not found
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM topics WHERE id = ?", (topic_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving topic: {e}")
+            return None
+
+    def get_topic_linked_articles(self, topic_id: int) -> list:
+        """
+        Get all articles linked to a topic.
+
+        Args:
+            topic_id: Topic ID
+
+        Returns:
+            List of article dicts linked to the topic
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT a.* FROM articles a
+                    JOIN article_topics at ON a.id = at.article_id
+                    WHERE at.topic_id = ?
+                    ORDER BY a.created_at DESC
+                """, (topic_id,))
+                articles = [dict(row) for row in cursor.fetchall()]
+                return articles
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving topic articles: {e}")
+            return []
+
+    def mark_topic_processed(self, topic_id: int) -> bool:
+        """
+        Mark a topic as processed for summary.
+
+        Args:
+            topic_id: Topic ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE topics
+                    SET processed_for_summary = 1
+                    WHERE id = ?
+                """, (topic_id,))
+                conn.commit()
+                logger.debug(f"Topic {topic_id} marked as processed")
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Error marking topic processed: {e}")
+            return False

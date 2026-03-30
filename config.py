@@ -47,6 +47,14 @@ class Config:
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
     RETRY_BACKOFF_FACTOR = float(os.getenv("RETRY_BACKOFF_FACTOR", "2.0"))
 
+    # Web scraping and semantic clustering
+    TRAFILATURA_TIMEOUT = int(os.getenv("TRAFILATURA_TIMEOUT", "30"))
+    TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "")
+    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.70"))
+    MIN_CONTENT_LENGTH_FOR_SCRAPING = int(os.getenv("MIN_CONTENT_LENGTH_FOR_SCRAPING", "300"))
+    API_DELAY_BETWEEN_REQUESTS = int(os.getenv("API_DELAY_BETWEEN_REQUESTS", "5"))
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""
