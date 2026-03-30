@@ -5,6 +5,9 @@ from functools import wraps
 from logging_config import logger
 from config import Config
 
+# Cache for relevance checks to avoid repeated API calls
+_relevance_cache = {}
+
 
 def retry_with_backoff(func):
     """
@@ -145,67 +148,100 @@ def detect_similar_articles(articles: list) -> dict:
 
 def is_relevant_security_article(title: str, content: str) -> bool:
     """
-    Filter out non-relevant content like podcasts, summaries, or generic news.
+    Filter out non-relevant content using AI analysis.
 
-    Returns True if the article likely contains specific security information.
+    Returns True if the article contains specific, actionable security information.
+    Uses Gemini to understand context beyond keyword matching.
     """
     if not title or not content:
         return False
 
-    title_lower = title.lower()
-    content_lower = content.lower()
+    # Check cache first
+    cache_key = hashlib.sha256(f"{title}:{content[:500]}".encode()).hexdigest()
+    if cache_key in _relevance_cache:
+        return _relevance_cache[cache_key]
 
-    # Keywords indicating non-security or generic content
-    generic_keywords = [
+    # Quick keyword check for obvious non-security content
+    title_lower = title.lower()
+    obvious_non_security = [
         "podcast",
         "stormcast",
-        "audio",
-        "briefing summary",
-        "news roundup",
+        "audio briefing",
         "week in review",
-        "monthly summary",
         "this week",
-        "last week",
-        "upcoming events",
-        "press release",
-        "announcement",
-        "event",
-        "webinar",
     ]
 
-    # Check if title or beginning of content contains generic keywords
-    for keyword in generic_keywords:
-        if keyword in title_lower or (keyword in content_lower and len(content_lower) < 300):
-            return False
+    for keyword in obvious_non_security:
+        if keyword in title_lower:
+            # Still check with AI for edge cases, but default to False
+            pass
 
-    # Articles should have specific security indicators
-    security_keywords = [
-        "cve",
-        "vulnerability",
-        "exploit",
-        "malware",
-        "ransomware",
-        "phishing",
-        "breach",
-        "attack",
-        "threat",
-        "compromise",
-        "patch",
-        "advisory",
-        "critical",
-        "zero-day",
-        "flaw",
-        "bug",
-        "security",
-    ]
+    try:
+        from google import genai
+        from google.genai import types
+        from config import Config
 
-    has_security_keyword = any(kw in content_lower[:500] for kw in security_keywords)
+        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
 
-    # If very short content without security keywords, likely not relevant
-    if len(content) < 100 and not has_security_keyword:
-        return False
+        prompt = f"""Article Title: {title}
 
-    return True
+Article Content: {content[:1000]}
+
+Is this article about a SPECIFIC security threat, vulnerability, or incident with actionable information?
+
+Examples of RELEVANT content:
+- "CVE-2026-1234 critical vulnerability in Apache found"
+- "New ransomware strain targeting healthcare sector"
+- "Google patches zero-day in Chrome affecting all users"
+- "Cisco releases emergency security update for ASA"
+
+Examples of NON-RELEVANT content:
+- "ISC Stormcast Podcast March 26 2026" (podcast summary)
+- "Security news roundup of the week"
+- "Upcoming cybersecurity conference"
+- "Interview with security researcher"
+
+Respond with only "YES" or "NO"."""
+
+        instruction = """You are a security content analyst. Determine if an article contains
+        SPECIFIC security threat information (CVE, vulnerability, breach, malware, etc.)
+        that is actionable for a SOC analyst. Exclude podcasts, summaries, announcements,
+        and generic news without specific technical details."""
+
+        logger.debug(f"Checking relevance with AI: {title[:50]}...")
+        response = client.models.generate_content(
+            model=Config.GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                temperature=0.0,
+            ),
+        )
+
+        result = response.text.strip().upper()
+        is_relevant = "YES" in result
+
+        # Cache the result
+        _relevance_cache[cache_key] = is_relevant
+
+        logger.debug(f"Relevance check for '{title[:50]}...': {is_relevant}")
+        return is_relevant
+
+    except Exception as e:
+        logger.warning(f"AI relevance check failed for '{title[:50]}...': {e}")
+        # Fallback to basic keyword check if AI fails
+        security_keywords = [
+            "cve", "vulnerability", "exploit", "malware", "ransomware",
+            "phishing", "breach", "attack", "threat", "compromise",
+            "patch", "advisory", "critical", "zero-day", "flaw", "bug"
+        ]
+        content_lower = content.lower()
+        is_relevant = any(kw in content_lower[:500] for kw in security_keywords)
+
+        # Cache the fallback result
+        _relevance_cache[cache_key] = is_relevant
+
+        return is_relevant
 
 
 def deduplicate_alerts_with_gemini(alerts: list) -> dict:
