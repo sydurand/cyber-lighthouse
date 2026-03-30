@@ -7,16 +7,16 @@ from logging_config import logger
 
 
 class Task:
-    """Représente une tâche à exécuter."""
+    """Represents a task to be executed."""
 
     def __init__(self, task_id: str, func: Callable, args: tuple = (), kwargs: dict = None):
-        """Initialiser une tâche.
+        """Initialize a task.
 
         Args:
-            task_id: Identifiant unique de la tâche
-            func: Fonction à exécuter
-            args: Arguments positionnels
-            kwargs: Arguments nommés
+            task_id: Unique task identifier
+            func: Function to execute
+            args: Positional arguments
+            kwargs: Keyword arguments
         """
         self.task_id = task_id
         self.func = func
@@ -27,7 +27,7 @@ class Task:
         self.error = None
 
     def execute(self):
-        """Exécuter la tâche."""
+        """Execute the task."""
         try:
             self.status = "running"
             logger.debug(f"[TASK] {self.task_id} executing...")
@@ -41,24 +41,26 @@ class Task:
 
 
 class TaskQueue:
-    """Queue de tâches légère avec workers."""
+    """Lightweight task queue with background workers."""
 
-    def __init__(self, num_workers: int = 1, batch_delay: int = 2):
-        """Initialiser la queue.
+    def __init__(self, num_workers: int = 1, batch_delay: int = 2, respect_api_quota: bool = True):
+        """Initialize the task queue.
 
         Args:
-            num_workers: Nombre de workers
-            batch_delay: Délai entre traitements (secondes)
+            num_workers: Number of worker threads
+            batch_delay: Minimum delay between task executions (seconds)
+            respect_api_quota: If True, adjusts delay to respect API rate limit (5 calls/min)
         """
         self.num_workers = num_workers
         self.batch_delay = batch_delay
+        self.respect_api_quota = respect_api_quota
         self.queue = queue.Queue()
         self.tasks: Dict[str, Task] = {}
         self.workers = []
         self.running = False
 
     def start(self):
-        """Démarrer les workers."""
+        """Start the worker threads."""
         if self.running:
             logger.warning("Task queue already running")
             return
@@ -76,18 +78,18 @@ class TaskQueue:
             self.workers.append(worker)
 
     def stop(self):
-        """Arrêter les workers."""
+        """Stop the worker threads."""
         self.running = False
         logger.info("Stopping task queue")
 
     def submit(self, task_id: str, func: Callable, args: tuple = (), kwargs: dict = None) -> Task:
-        """Soumettre une tâche.
+        """Submit a task to the queue.
 
         Args:
-            task_id: Identifiant unique
-            func: Fonction à exécuter
-            args: Arguments
-            kwargs: Kwargs
+            task_id: Unique task identifier
+            func: Function to execute
+            args: Positional arguments
+            kwargs: Keyword arguments
 
         Returns:
             Task object
@@ -99,43 +101,72 @@ class TaskQueue:
         return task
 
     def get_task(self, task_id: str) -> Task:
-        """Récupérer une tâche par ID."""
+        """Get a task by ID."""
         return self.tasks.get(task_id)
 
     def get_queue_size(self) -> int:
-        """Taille actuelle de la queue."""
+        """Get the current queue size."""
         return self.queue.qsize()
 
+    def _calculate_adaptive_delay(self) -> float:
+        """Calculate adaptive delay based on API quota remaining.
+
+        Returns:
+            Delay in seconds (min batch_delay, max 12s to respect 5 calls/min limit)
+        """
+        if not self.respect_api_quota:
+            return self.batch_delay
+
+        try:
+            from optimization import get_call_counter
+            counter = get_call_counter()
+            remaining = counter.get_remaining_quota()
+
+            # If quota exhausted, wait longer (up to 12s = 60/5)
+            if remaining <= 0:
+                return 12  # Wait ~12s to allow quota to regenerate
+            elif remaining == 1:
+                return 10  # Almost exhausted, be conservative
+            elif remaining == 2:
+                return 8
+            else:
+                # Quota available, use minimal delay
+                return max(self.batch_delay, 2)
+        except Exception as e:
+            logger.debug(f"Error calculating adaptive delay: {e}")
+            return self.batch_delay
+
     def _worker_loop(self):
-        """Boucle principale du worker."""
+        """Main worker loop."""
         while self.running:
             try:
-                # Récupérer tâche avec timeout
+                # Get task with timeout
                 task = self.queue.get(timeout=1)
 
-                # Exécuter
+                # Execute task
                 task.execute()
 
-                # Délai entre tâches
-                if self.batch_delay > 0:
-                    logger.debug(f"Worker sleeping {self.batch_delay}s...")
-                    time.sleep(self.batch_delay)
+                # Adaptive delay between tasks (respects API quota)
+                delay = self._calculate_adaptive_delay()
+                if delay > 0:
+                    logger.debug(f"Worker sleeping {delay}s (respecting API quota)...")
+                    time.sleep(delay)
 
                 self.queue.task_done()
 
             except queue.Empty:
-                # Pas de tâche, continuer
+                # No task, continue waiting
                 continue
             except Exception as e:
                 logger.error(f"Worker error: {e}")
 
 
-# Instance globale de queue
+# Global task queue instance
 _task_queue = None
 
 
 def get_task_queue(num_workers: int = 1, batch_delay: int = 2) -> TaskQueue:
-    """Obtenir ou créer la queue globale."""
+    """Get or create the global task queue."""
     global _task_queue
 
     if _task_queue is None:
@@ -146,6 +177,6 @@ def get_task_queue(num_workers: int = 1, batch_delay: int = 2) -> TaskQueue:
 
 
 def submit_task(task_id: str, func: Callable, args: tuple = (), kwargs: dict = None) -> Task:
-    """Soumettre une tâche à la queue globale."""
+    """Submit a task to the global task queue."""
     queue_instance = get_task_queue()
     return queue_instance.submit(task_id, func, args, kwargs)

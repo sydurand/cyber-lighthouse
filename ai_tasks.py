@@ -1,4 +1,4 @@
-"""Tâches IA pour traitement en arrière-plan."""
+"""AI tasks for background processing."""
 import hashlib
 from logging_config import logger
 from utils import extract_tags_with_gemini, is_relevant_security_article
@@ -6,15 +6,15 @@ from cache import get_cache
 
 
 def process_article_batch(articles: list) -> dict:
-    """Traiter un batch d'articles: filtrage + extraction tags.
+    """Process a batch of articles: filtering + tag extraction.
 
     Args:
-        articles: Liste d'articles à traiter
+        articles: List of articles to process
 
     Returns:
-        Dict avec résultats du traitement
+        Dict with processing results
     """
-    logger.info(f"[AI_TASK] Traitement batch de {len(articles)} articles")
+    logger.info(f"[AI_TASK] Processing batch of {len(articles)} articles")
     cache = get_cache()
     results = {
         "processed": 0,
@@ -29,13 +29,13 @@ def process_article_batch(articles: list) -> dict:
         analysis = article.get("analysis", "")
 
         try:
-            # Vérifier la pertinence
+            # Check relevance
             if not is_relevant_security_article(title, content):
                 results["filtered_out"] += 1
-                logger.debug(f"Article {article_id} rejeté (non pertinent)")
+                logger.debug(f"Article {article_id} rejected (not relevant)")
                 continue
 
-            # Extraire tags
+            # Extract tags
             tags = extract_tags_with_gemini(title, analysis)
 
             results["articles"].append({
@@ -51,23 +51,23 @@ def process_article_batch(articles: list) -> dict:
             logger.error(f"Erreur traitement article {article_id}: {e}")
             continue
 
-    logger.info(f"[AI_TASK] Batch terminé: {results['processed']} traités, {results['filtered_out']} rejetés")
+    logger.info(f"[AI_TASK] Batch complete: {results['processed']} processed, {results['filtered_out']} rejected")
     return results
 
 
 def extract_tags_for_article(article_id: int, title: str, analysis: str) -> dict:
-    """Extraire tags pour un article.
+    """Extract tags for an article.
 
     Args:
-        article_id: ID article
-        title: Titre
-        analysis: Analyse
+        article_id: Article ID
+        title: Article title
+        analysis: Article analysis
 
     Returns:
-        Dict avec article_id et tags
+        Dict with article_id and tags
     """
     try:
-        logger.debug(f"[AI_TASK] Extraction tags article {article_id}")
+        logger.debug(f"[AI_TASK] Extracting tags for article {article_id}")
         tags = extract_tags_with_gemini(title, analysis)
         return {
             "article_id": article_id,
@@ -85,18 +85,18 @@ def extract_tags_for_article(article_id: int, title: str, analysis: str) -> dict
 
 
 def filter_article_relevance(article_id: int, title: str, content: str) -> dict:
-    """Vérifier la pertinence d'un article.
+    """Check if an article is relevant.
 
     Args:
-        article_id: ID article
-        title: Titre
-        content: Contenu
+        article_id: Article ID
+        title: Article title
+        content: Article content
 
     Returns:
-        Dict avec article_id et statut
+        Dict with article_id and status
     """
     try:
-        logger.debug(f"[AI_TASK] Vérification pertinence article {article_id}")
+        logger.debug(f"[AI_TASK] Checking relevance for article {article_id}")
         is_relevant = is_relevant_security_article(title, content)
         return {
             "article_id": article_id,
@@ -114,30 +114,30 @@ def filter_article_relevance(article_id: int, title: str, content: str) -> dict:
 
 
 def analyze_unprocessed_articles(batch_size: int = 10) -> dict:
-    """Analyser les articles non traités.
+    """Analyze unprocessed articles.
 
     Args:
-        batch_size: Nombre d'articles à traiter
+        batch_size: Number of articles to process
 
     Returns:
-        Dict avec statistiques
+        Dict with statistics
     """
     try:
         from database import Database
         from real_time import analyze_article_with_gemini
 
-        logger.info("[AI_TASK] Analyse articles non traités")
+        logger.info("[AI_TASK] Analyzing unprocessed articles")
         db = Database()
         cache = get_cache()
 
-        # Récupérer articles sans analyse
+        # Get articles without analysis
         articles = db.get_unprocessed_articles()
         articles_needing_analysis = [
             a for a in articles
             if not cache.get_analysis(a.get('title', ''), a.get('content', ''))
         ]
 
-        logger.info(f"Trouvé {len(articles_needing_analysis)} articles sans analyse")
+        logger.info(f"Found {len(articles_needing_analysis)} articles needing analysis")
 
         processed = 0
         for article in articles_needing_analysis[:batch_size]:
@@ -145,24 +145,24 @@ def analyze_unprocessed_articles(batch_size: int = 10) -> dict:
                 title = article.get('title', '')
                 content = article.get('content', '')
 
-                # Analyser avec Gemini
+                # Analyze with Gemini
                 analysis = analyze_article_with_gemini(title, content)
 
-                logger.debug(f"✓ Analysé: {title[:50]}...")
+                logger.debug(f"✓ Analyzed: {title[:50]}...")
                 processed += 1
 
             except Exception as e:
-                logger.error(f"Erreur analyse article: {e}")
+                logger.error(f"Error analyzing article: {e}")
                 continue
 
-        logger.info(f"[AI_TASK] {processed} articles analysés")
+        logger.info(f"[AI_TASK] {processed} articles analyzed")
         return {
             "status": "success",
             "processed": processed
         }
 
     except Exception as e:
-        logger.error(f"Erreur analyze_unprocessed_articles: {e}")
+        logger.error(f"Error in analyze_unprocessed_articles: {e}")
         return {
             "status": "error",
             "error": str(e)
@@ -170,16 +170,16 @@ def analyze_unprocessed_articles(batch_size: int = 10) -> dict:
 
 
 def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
-    """Générer une alerte rapide pour un nouveau topic.
+    """Generate a rapid alert for a new topic.
 
-    Crée une analyse rapide d'un nouveau topic pour notification Teams.
+    Creates a quick analysis of a new topic for Teams notification.
 
     Args:
-        title: Titre du topic
-        content: Contenu du topic
+        title: Topic title
+        content: Topic content
 
     Returns:
-        Texte d'alerte formaté
+        Formatted alert text
     """
     try:
         from google import genai
@@ -187,7 +187,7 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
         from config import Config
         from optimization import get_call_counter
 
-        logger.debug(f"[AI_TASK] Génération alerte rapide pour topic: {title[:50]}...")
+        logger.debug(f"[AI_TASK] Generating rapid alert for topic: {title[:50]}...")
 
         call_counter = get_call_counter()
         if not call_counter.can_make_call():
@@ -195,6 +195,8 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
             return f"New topic: {title}"
 
         client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+
+        # Generate rapid alert for new topic
 
         prompt = f"""New security topic detected:
 
@@ -222,9 +224,9 @@ Be concise and highlight the most critical information."""
         call_counter.add_call()
         alert_text = response.text.strip()
 
-        logger.debug(f"[AI_TASK] Alerte générée: {alert_text[:80]}...")
+        logger.debug(f"[AI_TASK] Alert generated: {alert_text[:80]}...")
         return alert_text
 
     except Exception as e:
-        logger.error(f"Erreur génération alerte: {e}")
+        logger.error(f"Error generating alert: {e}")
         return f"New topic detected: {title}"
