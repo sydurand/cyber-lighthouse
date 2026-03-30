@@ -19,7 +19,7 @@ class VersionManager:
     VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)\.(\d+)")
     FILES_TO_UPDATE = [
         "pyproject.toml",
-        "setup.py",
+        "setup.py",  # Optional - updated if exists
     ]
 
     def __init__(self):
@@ -190,8 +190,10 @@ def main():
             files_updated += 1
 
     if files_updated == 0:
-        print("⚠️  No files were updated")
+        print("❌ Error: No files were updated. Check that pyproject.toml exists.")
         sys.exit(1)
+
+    print(f"\n✅ Successfully updated {files_updated} file(s)")
 
     # Commit changes
     if confirm_action("Commit these changes to git?"):
