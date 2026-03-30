@@ -28,3 +28,10 @@ base_veille.json
 # Cache
 cache/
 cache/gemini_responses.json
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
