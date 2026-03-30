@@ -8,7 +8,7 @@ import os
 from database import Database
 from cache import get_cache
 from optimization import get_call_counter
-from utils import detect_similar_articles, deduplicate_alerts_with_gemini
+from utils import detect_similar_articles, deduplicate_alerts_with_gemini, is_relevant_security_article
 from .models import (
     AlertsListResponse,
     AlertResponse,
@@ -56,16 +56,23 @@ async def get_alerts(
             articles, key=lambda x: x.get("date", ""), reverse=True
         )
 
-        # Build alert objects with analysis
+        # Build alert objects with analysis, filtering out non-relevant content
         all_alerts = []
         for article in articles_sorted:
+            title = article.get("title", "")
+            content = article.get("content", "")
+
+            # Skip articles that are not relevant security content
+            if not is_relevant_security_article(title, content):
+                continue
+
             # Try to get analysis from cache
-            analysis = cache.get_analysis(article.get("title", ""), article.get("content", ""))
+            analysis = cache.get_analysis(title, content)
 
             alert = AlertResponse(
                 id=article.get("id", 0),
                 source=article.get("source", "Unknown"),
-                title=article.get("title", ""),
+                title=title,
                 link=article.get("link", ""),
                 date=article.get("date", ""),
                 analysis=analysis,

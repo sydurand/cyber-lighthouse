@@ -143,6 +143,71 @@ def detect_similar_articles(articles: list) -> dict:
     return groups
 
 
+def is_relevant_security_article(title: str, content: str) -> bool:
+    """
+    Filter out non-relevant content like podcasts, summaries, or generic news.
+
+    Returns True if the article likely contains specific security information.
+    """
+    if not title or not content:
+        return False
+
+    title_lower = title.lower()
+    content_lower = content.lower()
+
+    # Keywords indicating non-security or generic content
+    generic_keywords = [
+        "podcast",
+        "stormcast",
+        "audio",
+        "briefing summary",
+        "news roundup",
+        "week in review",
+        "monthly summary",
+        "this week",
+        "last week",
+        "upcoming events",
+        "press release",
+        "announcement",
+        "event",
+        "webinar",
+    ]
+
+    # Check if title or beginning of content contains generic keywords
+    for keyword in generic_keywords:
+        if keyword in title_lower or (keyword in content_lower and len(content_lower) < 300):
+            return False
+
+    # Articles should have specific security indicators
+    security_keywords = [
+        "cve",
+        "vulnerability",
+        "exploit",
+        "malware",
+        "ransomware",
+        "phishing",
+        "breach",
+        "attack",
+        "threat",
+        "compromise",
+        "patch",
+        "advisory",
+        "critical",
+        "zero-day",
+        "flaw",
+        "bug",
+        "security",
+    ]
+
+    has_security_keyword = any(kw in content_lower[:500] for kw in security_keywords)
+
+    # If very short content without security keywords, likely not relevant
+    if len(content) < 100 and not has_security_keyword:
+        return False
+
+    return True
+
+
 def deduplicate_alerts_with_gemini(alerts: list) -> dict:
     """
     Deduplicate alerts using AI semantic analysis.
