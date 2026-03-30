@@ -47,6 +47,36 @@ const app = createApp({
       return filtered;
     });
 
+    // Deduplication function - groups similar alerts from multiple sources
+    const deduplicateAlerts = (alertsList) => {
+      const grouped = new Map();
+
+      alertsList.forEach(alert => {
+        // Create a key based on title similarity (first 50 chars)
+        const key = alert.title.substring(0, 50).toLowerCase().trim();
+
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            ...alert,
+            sources: [{ source: alert.source, link: alert.link }],
+          });
+        } else {
+          const existing = grouped.get(key);
+          // Add source if not already present
+          if (!existing.sources.some(s => s.source === alert.source)) {
+            existing.sources.push({ source: alert.source, link: alert.link });
+          }
+        }
+      });
+
+      // Convert map to array and format
+      return Array.from(grouped.values()).map(alert => ({
+        ...alert,
+        multiSource: alert.sources.length > 1,
+        sourceLinks: alert.sources,
+      }));
+    };
+
     // Methods
     const refreshData = async () => {
       isLoading.value = true;
@@ -61,7 +91,10 @@ const app = createApp({
             apiClient.searchArticles({ limit: 1000 }),
           ]);
 
-        alerts.value = alertsData.alerts || [];
+        // Deduplicate alerts by similar title
+        const rawAlerts = alertsData.alerts || [];
+        alerts.value = deduplicateAlerts(rawAlerts);
+
         reports.value = reportsData.reports || [];
         statistics.value = statsData;
         systemStatus.value = statusData;
