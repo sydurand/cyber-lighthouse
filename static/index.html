@@ -124,7 +124,7 @@
                 <h3 class="text-lg font-bold text-white flex-1">{{ alert.title }}</h3>
                 <span class="text-xs font-medium bg-red-500/20 text-red-300 px-3 py-1 rounded-full">{{ alert.source }}</span>
               </div>
-              <div v-if="alert.analysis" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 text-slate-300 text-sm" v-html="renderMarkdown(alert.analysis)"></div>
+              <div v-if="alert.analysis" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 markdown-content text-slate-300 text-sm" v-html="renderMarkdown(alert.analysis)"></div>
               <div class="flex justify-between items-center text-sm">
                 <span class="text-slate-500">{{ alert.date }}</span>
                 <a :href="alert.link" target="_blank" class="text-blue-400 hover:text-blue-300">Read More →</a>
