@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api import router
 from logging_config import logger
+from task_queue import get_task_queue
 
 
 # Lifespan context manager for startup and shutdown events
@@ -18,9 +19,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Cyber-Lighthouse Dashboard server starting...")
     logger.info(f"API documentation available at http://localhost:8000/docs")
+
+    # Start task queue with 1 worker and 2s delay between tasks
+    task_queue = get_task_queue(num_workers=1, batch_delay=2)
+    logger.info(f"Task queue started with 1 worker (batch delay: 2s)")
+
     yield
+
     # Shutdown
     logger.info("Cyber-Lighthouse Dashboard server shutting down...")
+    task_queue.stop()
 
 
 # Create FastAPI app with lifespan
