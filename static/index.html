@@ -1,306 +1,243 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cyber-Lighthouse Dashboard</title>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cyber-Lighthouse Dashboard</title>
 
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              primary: '#0f172a',
-              secondary: '#1e293b',
-              accent: '#3b82f6',
-              danger: '#ef4444',
-              success: '#10b981',
-              warning: '#f59e0b',
-              info: '#06b6d4'
-            }
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#0f172a',
+            secondary: '#1e293b',
+            accent: '#3b82f6',
+            danger: '#ef4444',
+            success: '#10b981',
+            warning: '#f59e0b',
+            info: '#06b6d4'
           }
         }
       }
-    </script>
+    }
+  </script>
 
-    <!-- Font Awesome Icons -->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-    />
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/style.css" />
-  </head>
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
 
-  <body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 min-h-screen">
-    <div id="app" v-cloak>
-      <!-- Loading screen -->
-      <div v-if="!statistics" class="flex items-center justify-center min-h-screen">
+<body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 min-h-screen">
+  <div id="app" v-cloak>
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-700 backdrop-blur-md bg-opacity-90">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-lg">
+              <i class="fas fa-lighthouse text-slate-900 text-lg"></i>
+            </div>
+            <h1 class="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-500 bg-clip-text text-transparent">
+              Cyber-Lighthouse
+            </h1>
+          </div>
+
+          <!-- Tabs -->
+          <div class="hidden md:flex items-center gap-1">
+            <button @click="currentTab = 'alerts'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'alerts' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-bell"></i> Alerts
+            </button>
+            <button @click="currentTab = 'reports'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-file-alt"></i> Reports
+            </button>
+            <button @click="currentTab = 'stats'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'stats' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-chart-bar"></i> Stats
+            </button>
+            <button @click="currentTab = 'articles'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'articles' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-archive"></i> History
+            </button>
+          </div>
+
+          <!-- Refresh Button -->
+          <button @click="refreshData" :disabled="isLoading" class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fas fa-sync-alt" :class="{ 'animate-spin': isLoading }"></i>
+            <span class="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <!-- Loading State -->
+      <div v-if="!statistics" class="flex items-center justify-center min-h-96">
         <div class="text-center">
           <div class="mb-4">
-            <i class="fas fa-spinner animate-spin text-4xl text-blue-400"></i>
+            <i class="fas fa-spinner animate-spin text-5xl text-blue-400"></i>
           </div>
-          <p class="text-slate-300 text-lg">Loading Cyber-Lighthouse Dashboard...</p>
-          <p class="text-slate-500 text-sm mt-2">Fetching articles and reports...</p>
+          <p class="text-slate-300 text-xl">Loading Dashboard...</p>
+          <p class="text-slate-500 text-sm mt-2">Fetching articles and reports</p>
         </div>
       </div>
 
-      <!-- Main content (shown when data is loaded) -->
-      <div v-show="statistics">
-      <!-- Navigation -->
-      <nav class="sticky top-0 z-50 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-700 backdrop-blur-md bg-opacity-90">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="flex justify-between items-center h-16">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-lg">
-                <i class="fas fa-lighthouse text-slate-900 text-lg"></i>
+      <!-- Content Grid -->
+      <div v-show="statistics" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- Sidebar -->
+        <div class="space-y-6">
+          <!-- System Status -->
+          <div v-if="systemStatus" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+            <h3 class="text-lg font-bold text-white mb-4">System Status</h3>
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Database:</span>
+                <span class="text-emerald-300">{{ systemStatus.database_size_mb.toFixed(2) }} MB</span>
               </div>
-              <h1 class="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-500 bg-clip-text text-transparent">
-                Cyber-Lighthouse
-              </h1>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Cache:</span>
+                <span class="text-cyan-300">{{ systemStatus.cache.total_entries }} entries</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Hit Rate:</span>
+                <span class="text-yellow-300">{{ systemStatus.cache.cache_hit_rate.toFixed(1) }}%</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">API Quota:</span>
+                <span class="text-blue-300">{{ systemStatus.api_quota_remaining }}/{{ systemStatus.api_quota_total }}</span>
+              </div>
             </div>
+          </div>
 
-            <!-- Tabs -->
-            <div class="hidden md:flex items-center gap-1">
-              <button
-                @click="currentTab = 'alerts'"
-                :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'alerts' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']"
-              >
-                <i class="fas fa-bell"></i> Alerts
-              </button>
-              <button
-                @click="currentTab = 'reports'"
-                :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']"
-              >
-                <i class="fas fa-file-alt"></i> Reports
-              </button>
-              <button
-                @click="currentTab = 'stats'"
-                :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'stats' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']"
-              >
-                <i class="fas fa-chart-bar"></i> Stats
-              </button>
-              <button
-                @click="currentTab = 'articles'"
-                :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'articles' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']"
-              >
-                <i class="fas fa-archive"></i> History
-              </button>
+          <!-- Quick Stats -->
+          <div v-if="statistics" class="space-y-2">
+            <div class="bg-blue-600/20 border border-blue-500/30 rounded-lg p-4">
+              <p class="text-sm text-blue-300">Total</p>
+              <p class="text-3xl font-bold text-white">{{ statistics.total_articles }}</p>
             </div>
-
-            <!-- Refresh Button -->
-            <button
-              @click="refreshData"
-              :disabled="isLoading"
-              class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <i class="fas fa-sync-alt" :class="{ 'animate-spin': isLoading }"></i>
-              <span class="hidden sm:inline">Refresh</span>
-            </button>
+            <div class="bg-yellow-600/20 border border-yellow-500/30 rounded-lg p-4">
+              <p class="text-sm text-yellow-300">Today</p>
+              <p class="text-3xl font-bold text-white">{{ statistics.articles_today }}</p>
+            </div>
+            <div class="bg-emerald-600/20 border border-emerald-500/30 rounded-lg p-4">
+              <p class="text-sm text-emerald-300">Processed</p>
+              <p class="text-3xl font-bold text-white">{{ statistics.processed_articles }}</p>
+            </div>
           </div>
         </div>
-      </nav>
 
-      <!-- Main Content -->
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <!-- Sidebar -->
-          <div class="lg:col-span-1">
-            <!-- System Status Card -->
-            <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-xl p-6 mb-6 hover:shadow-2xl transition-shadow duration-200">
-              <h3 class="text-lg font-bold flex items-center gap-2 mb-4 text-white">
-                <i class="fas fa-server text-blue-400"></i> System Status
-              </h3>
-              <div class="space-y-4">
-                <div v-if="systemStatus" class="space-y-4">
-                  <div class="bg-slate-700/30 rounded-lg p-3">
-                    <p class="text-xs text-slate-400 uppercase tracking-wide">Database</p>
-                    <p class="text-2xl font-bold text-blue-400">{{ systemStatus.database_size_mb.toFixed(2) }} <span class="text-sm">MB</span></p>
-                  </div>
-                  <div class="bg-slate-700/30 rounded-lg p-3">
-                    <p class="text-xs text-slate-400 uppercase tracking-wide">Cache Entries</p>
-                    <p class="text-2xl font-bold text-emerald-400">{{ systemStatus.cache.total_entries }}</p>
-                  </div>
-                  <div class="bg-slate-700/30 rounded-lg p-3">
-                    <p class="text-xs text-slate-400 uppercase tracking-wide">Cache Hit Rate</p>
-                    <p class="text-2xl font-bold text-yellow-400">{{ systemStatus.cache.cache_hit_rate.toFixed(1) }}%</p>
-                  </div>
-                  <div class="bg-slate-700/30 rounded-lg p-3">
-                    <p class="text-xs text-slate-400 uppercase tracking-wide">API Quota</p>
-                    <p class="text-2xl font-bold text-cyan-400">{{ systemStatus.api_quota_remaining }}<span class="text-sm text-slate-400">/{{ systemStatus.api_quota_total }}</span></p>
-                  </div>
-                </div>
-              </div>
+        <!-- Main Content Area -->
+        <div class="lg:col-span-3 space-y-6">
+          <!-- Alerts Panel -->
+          <div v-show="currentTab === 'alerts'" class="space-y-4">
+            <div v-if="alerts.length === 0" class="text-center py-8 text-slate-400">
+              <i class="fas fa-bell text-4xl mb-2"></i>
+              <p>No alerts</p>
             </div>
-
-            <!-- Quick Stats Card -->
-            <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-xl p-6 hover:shadow-2xl transition-shadow duration-200">
-              <h3 class="text-lg font-bold flex items-center gap-2 mb-4 text-white">
-                <i class="fas fa-chart-line text-emerald-400"></i> Quick Stats
-              </h3>
-              <div v-if="statistics" class="space-y-3">
-                <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                  <span class="text-slate-400">Total Articles</span>
-                  <span class="text-xl font-bold text-blue-400">{{ statistics.total_articles }}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                  <span class="text-slate-400">Today</span>
-                  <span class="text-xl font-bold text-yellow-400">{{ statistics.articles_today }}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                  <span class="text-slate-400">This Week</span>
-                  <span class="text-xl font-bold text-cyan-400">{{ statistics.articles_this_week }}</span>
-                </div>
-                <div class="flex justify-between items-center py-2 border-b border-slate-700">
-                  <span class="text-slate-400">Sources</span>
-                  <span class="text-xl font-bold text-purple-400">{{ statistics.sources_count }}</span>
-                </div>
-                <div class="flex justify-between items-center pt-2">
-                  <span class="text-slate-400">API Saved</span>
-                  <span class="text-xl font-bold text-emerald-400">{{ statistics.api_calls_saved }}</span>
-                </div>
+            <div v-for="alert in alerts" :key="alert.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-red-500/30 shadow-lg hover:shadow-2xl hover:border-red-500/50 transition-all duration-200 p-6">
+              <div class="flex justify-between items-start mb-3">
+                <h3 class="text-lg font-bold text-white flex-1">{{ alert.title }}</h3>
+                <span class="text-xs font-medium bg-red-500/20 text-red-300 px-3 py-1 rounded-full">{{ alert.source }}</span>
+              </div>
+              <div v-if="alert.analysis" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 text-slate-300 text-sm" v-html="renderMarkdown(alert.analysis)"></div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-slate-500">{{ alert.date }}</span>
+                <a :href="alert.link" target="_blank" class="text-blue-400 hover:text-blue-300">Read More →</a>
               </div>
             </div>
           </div>
 
-          <!-- Main Content Area -->
-          <div class="lg:col-span-3">
-            <!-- Alerts Panel -->
-            <div v-show="currentTab === 'alerts'" class="space-y-4">
-              <div v-if="alerts.length === 0" class="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20 rounded-xl p-8 text-center">
-                <i class="fas fa-bell text-4xl text-blue-400/50 mb-3"></i>
-                <p class="text-slate-300">No alerts available</p>
+          <!-- Reports Panel -->
+          <div v-show="currentTab === 'reports'" class="space-y-4">
+            <div v-if="reports.length === 0" class="text-center py-8 text-slate-400">
+              <i class="fas fa-file-alt text-4xl mb-2"></i>
+              <p>No reports</p>
+            </div>
+            <div v-for="report in reports" :key="report.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+              <div class="flex justify-between items-center mb-4 pb-4 border-b border-slate-700">
+                <h4 class="text-lg font-bold text-white">{{ report.generated_date }}</h4>
+                <span class="text-sm text-slate-400">{{ report.articles_count }} articles</span>
               </div>
-              <div v-for="alert in alerts" :key="alert.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg hover:shadow-2xl hover:border-red-500/50 transition-all duration-200 p-6 overflow-hidden group">
-                <div class="flex justify-between items-start mb-3">
-                  <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-500/20 text-red-300 border border-red-500/30">
-                    {{ alert.source }}
-                  </span>
-                  <span class="text-xs text-slate-400">{{ alert.date }}</span>
-                </div>
-                <h4 class="text-lg font-bold text-white mb-2 group-hover:text-red-300 transition-colors">{{ alert.title }}</h4>
-                <div v-if="alert.analysis" class="bg-slate-900/50 border-l-4 border-yellow-500 rounded-lg p-4 mb-4 text-sm text-slate-300">
-                  {{ alert.analysis }}
-                </div>
-                <a :href="alert.link" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg transition-all duration-200">
-                  <i class="fas fa-external-link-alt"></i> Read More
+              <div class="markdown-content max-h-96 overflow-y-auto text-slate-300 text-sm" v-html="renderMarkdown(report.report_content)"></div>
+            </div>
+          </div>
+
+          <!-- Statistics Panel -->
+          <div v-show="currentTab === 'stats'" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+                <h3 class="text-lg font-bold text-white mb-4">Articles by Source</h3>
+                <canvas id="chartBySource" class="max-h-72"></canvas>
+              </div>
+              <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+                <h3 class="text-lg font-bold text-white mb-4">Articles by Date</h3>
+                <canvas id="chartByDate" class="max-h-72"></canvas>
+              </div>
+            </div>
+            <div v-if="statistics" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div class="bg-blue-600/20 border border-blue-500/30 rounded-xl p-6">
+                <p class="text-sm text-blue-300 uppercase tracking-wide mb-2">Total</p>
+                <p class="text-4xl font-bold text-blue-300">{{ statistics.total_articles }}</p>
+              </div>
+              <div class="bg-emerald-600/20 border border-emerald-500/30 rounded-xl p-6">
+                <p class="text-sm text-emerald-300 uppercase tracking-wide mb-2">Processed</p>
+                <p class="text-4xl font-bold text-emerald-300">{{ statistics.processed_articles }}</p>
+              </div>
+              <div class="bg-yellow-600/20 border border-yellow-500/30 rounded-xl p-6">
+                <p class="text-sm text-yellow-300 uppercase tracking-wide mb-2">Hit Rate</p>
+                <p class="text-4xl font-bold text-yellow-300">{{ statistics.cache_hit_rate.toFixed(1) }}%</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- History Panel -->
+          <div v-show="currentTab === 'articles'" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <input v-model="searchQuery" type="text" placeholder="Search articles..." class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors" />
+              <select v-model="filterSource" class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors">
+                <option value="">All Sources</option>
+                <option v-for="source in uniqueSources" :key="source" :value="source">{{ source }}</option>
+              </select>
+            </div>
+            <div v-if="filteredArticles.length === 0" class="text-center py-8 text-slate-400">
+              <i class="fas fa-search text-4xl mb-2"></i>
+              <p>No articles found</p>
+            </div>
+            <div v-for="article in filteredArticles" :key="article.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg hover:shadow-2xl hover:border-purple-500/50 transition-all duration-200 p-6">
+              <div class="flex justify-between items-start mb-3">
+                <h4 class="text-lg font-bold text-white flex-1">{{ article.title }}</h4>
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap ml-4">{{ article.source }}</span>
+              </div>
+              <p class="text-slate-300 text-sm mb-4">{{ article.content.substring(0, 200) }}...</p>
+              <div class="flex justify-between items-center">
+                <span class="text-xs text-slate-500">{{ article.date }}</span>
+                <a :href="article.link" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg transition-all duration-200 text-sm">
+                  <i class="fas fa-external-link-alt"></i> View
                 </a>
               </div>
             </div>
-
-            <!-- Reports Panel -->
-            <div v-show="currentTab === 'reports'" class="space-y-4">
-              <div v-if="reports.length === 0" class="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-xl p-8 text-center">
-                <i class="fas fa-file-alt text-4xl text-cyan-400/50 mb-3"></i>
-                <p class="text-slate-300">No reports available yet</p>
-              </div>
-              <div v-for="report in reports" :key="report.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-                <div class="flex justify-between items-center mb-4 pb-4 border-b border-slate-700">
-                  <h4 class="text-lg font-bold text-white">{{ report.generated_date }}</h4>
-                  <span class="text-sm text-slate-400">{{ report.articles_count }} articles</span>
-                </div>
-                <div class="markdown-content max-h-96 overflow-y-auto text-slate-300 text-sm" v-html="renderMarkdown(report.report_content)">
-                </div>
-              </div>
-            </div>
-
-            <!-- Statistics Panel -->
-            <div v-show="currentTab === 'stats'" class="space-y-6">
-              <!-- Charts -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-                  <h3 class="text-lg font-bold text-white mb-4">Articles by Source</h3>
-                  <canvas id="chartBySource" class="max-h-72"></canvas>
-                </div>
-                <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-                  <h3 class="text-lg font-bold text-white mb-4">Articles by Date</h3>
-                  <canvas id="chartByDate" class="max-h-72"></canvas>
-                </div>
-              </div>
-
-              <!-- Metrics -->
-              <div v-if="statistics" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-gradient-to-br from-blue-600/20 to-blue-700/20 border border-blue-500/30 rounded-xl p-6 shadow-lg">
-                  <p class="text-sm text-blue-300 uppercase tracking-wide mb-2">Total Articles</p>
-                  <p class="text-4xl font-bold text-blue-300">{{ statistics.total_articles }}</p>
-                </div>
-                <div class="bg-gradient-to-br from-emerald-600/20 to-emerald-700/20 border border-emerald-500/30 rounded-xl p-6 shadow-lg">
-                  <p class="text-sm text-emerald-300 uppercase tracking-wide mb-2">Processed</p>
-                  <p class="text-4xl font-bold text-emerald-300">{{ statistics.processed_articles }}</p>
-                </div>
-                <div class="bg-gradient-to-br from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-xl p-6 shadow-lg">
-                  <p class="text-sm text-yellow-300 uppercase tracking-wide mb-2">Cache Hit Rate</p>
-                  <p class="text-4xl font-bold text-yellow-300">{{ statistics.cache_hit_rate.toFixed(1) }}%</p>
-                </div>
-              </div>
-            </div>
-
-            <!-- Articles History Panel -->
-            <div v-show="currentTab === 'articles'" class="space-y-4">
-              <!-- Search and Filter -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="Search articles..."
-                  class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                />
-                <select
-                  v-model="filterSource"
-                  class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                >
-                  <option value="">All Sources</option>
-                  <option v-for="source in uniqueSources" :key="source" :value="source">
-                    {{ source }}
-                  </option>
-                </select>
-              </div>
-
-              <!-- Articles List -->
-              <div v-if="filteredArticles.length === 0" class="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-8 text-center">
-                <i class="fas fa-search text-4xl text-purple-400/50 mb-3"></i>
-                <p class="text-slate-300">No articles found</p>
-              </div>
-
-              <div v-for="article in filteredArticles" :key="article.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg hover:shadow-2xl hover:border-purple-500/50 transition-all duration-200 p-6 group">
-                <div class="flex justify-between items-start mb-3">
-                  <h4 class="text-lg font-bold text-white flex-1 group-hover:text-purple-300 transition-colors">{{ article.title }}</h4>
-                  <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap ml-4">
-                    {{ article.source }}
-                  </span>
-                </div>
-                <p class="text-slate-300 text-sm mb-4">{{ article.content.substring(0, 200) }}...</p>
-                <div class="flex justify-between items-center">
-                  <span class="text-xs text-slate-500">{{ article.date }}</span>
-                  <a :href="article.link" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg transition-all duration-200 text-sm">
-                    <i class="fas fa-external-link-alt"></i> View
-                  </a>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
-      </div>
-      <!-- End of main content -->
     </div>
+  </div>
 
-    <!-- Vue.js 3 -->
-    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.js"></script>
+  <!-- Vue.js 3 -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.js"></script>
 
-    <!-- Markdown-it for rendering markdown -->
-    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.umd.js"></script>
+  <!-- Markdown-it for rendering markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.umd.js"></script>
 
-    <!-- API Client -->
-    <script src="/static/js/api.js"></script>
+  <!-- API Client -->
+  <script src="/static/js/api.js"></script>
 
-    <!-- Vue App -->
-    <script src="/static/js/app.js"></script>
-  </body>
+  <!-- Vue App -->
+  <script src="/static/js/app.js"></script>
+</body>
 </html>
