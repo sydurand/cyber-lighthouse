@@ -9,9 +9,14 @@ Enhanced Cyber-Lighthouse with semantic topic clustering, web content extraction
 uv pip install trafilatura sentence-transformers scikit-learn
 ```
 
-### Run
+### Run Real-Time Monitoring
 ```bash
 python real_time.py --verbose
+```
+
+### Generate Daily Summary
+```bash
+python daily_summary.py
 ```
 
 ### Test
@@ -56,11 +61,20 @@ EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 ## How It Works
 
+### Real-Time Processing
 1. **Fetch RSS** - Get articles from CISA, SANS ISC, BleepingComputer
 2. **Enhance** - Scrape full article if RSS summary < 300 chars
 3. **Analyze** - Run Gemini analysis (uses cache when possible)
 4. **Cluster** - Group articles into semantic topics
 5. **Notify** - Send Teams message for new topics only
+
+### Daily Summary (New)
+1. **Collect** - Gather all unprocessed topics
+2. **Enrich** - Fetch latest CISA context
+3. **Synthesize** - Generate comprehensive daily report with Gemini
+4. **Archive** - Save report as Markdown file
+5. **Notify** - Send summary to Teams
+6. **Clean** - Remove topics older than 72 hours
 
 ## Implementation Details
 
@@ -145,10 +159,45 @@ python real_time.py --verbose
 ✅ No data loss on upgrade
 ✅ Tables created automatically
 
+## Daily Summary Reports
+
+The `daily_summary.py` script generates executive-level threat intelligence reports:
+
+- **Aggregates** all unprocessed topics into one report
+- **Enriches** with CISA KEV context for correlation
+- **Synthesizes** with Gemini into structured markdown
+- **Archives** reports in `reports/` directory with timestamps
+- **Sends** to Teams for team visibility
+- **Cleans** database by marking old topics as processed
+
+### Example Report Structure
+```
+# 🛑 DAILY CYBER THREAT INTELLIGENCE REPORT
+
+## 🌐 PART 1: STRATEGIC SUMMARY
+- Executive Summary: ...
+- Major Trends: ...
+
+## 🛠️ PART 2: CRITICAL TECHNICAL ALERTS
+- Vulnerabilities: ...
+- TTPs: ...
+- IOCs: ...
+
+## 📊 PART 3: RECOMMENDATIONS
+- Immediate Actions: ...
+- Monitoring Focus: ...
+```
+
+### Schedule with Cron (Optional)
+```bash
+# Daily at 8:00 AM
+0 8 * * * cd /path/to/Cyber-Lighthouse && python daily_summary.py
+```
+
 ## Future Enhancements
 
 - Topic summarization dashboard
 - Trending topics tracking
 - Custom embedding models
 - Manual topic management UI
-- Archive old topics
+- Scheduled daily reports
