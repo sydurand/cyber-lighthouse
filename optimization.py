@@ -134,7 +134,7 @@ def batch_articles_for_analysis(articles: list, batch_size: int = 3) -> list:
 
 def estimate_api_calls(articles: list, with_synthesis: bool = True, with_caching: bool = True) -> dict:
     """
-    Estimate how many API calls will be needed.
+    Estimate how many API calls will be needed for OpenRouter.
 
     Helps user understand rate limit impact.
 
@@ -160,33 +160,36 @@ def estimate_api_calls(articles: list, with_synthesis: bool = True, with_caching
 
     total_calls = base_calls + synthesis_calls
 
+    # OpenRouter free tier: ~10 req/min
+    openrouter_limit = 10
+
     return {
         "article_analyses": base_calls,
         "cached_analyses": cached_calls,
         "synthesis_call": synthesis_calls,
         "total_calls": total_calls,
-        "free_tier_limit": 5,
-        "will_exceed_limit": total_calls > 5
+        "openrouter_limit_per_minute": openrouter_limit,
+        "will_exceed_limit": total_calls > openrouter_limit
     }
 
 
 def optimize_for_rate_limit() -> dict:
     """
-    Get optimization settings for free tier rate limiting.
+    Get optimization settings for OpenRouter free tier rate limiting.
 
-    Returns recommended settings to stay within 5 requests/minute limit.
+    Returns recommended settings to stay within ~10 requests/minute limit.
 
     Returns:
         Dict with recommended settings
     """
     return {
-        "max_articles_per_run": 3,  # Stay within 5 req/min (3 + 1 synthesis + buffer)
+        "max_articles_per_run": 7,  # Stay within 10 req/min (7 + 1 synthesis + buffer)
         "batch_size": 1,  # Analyze one at a time
         "enable_caching": True,  # Cache everything
         "enable_similarity_check": True,  # Skip similar articles
         "enable_filtering": True,  # Skip low-value content
-        "recommended_frequency": "2 hours",  # Spread out runs
-        "description": "Optimized for free tier (5 req/min limit)"
+        "recommended_frequency": "1 hour",  # Spread out runs
+        "description": "Optimized for OpenRouter free tier (~10 req/min limit)"
     }
 
 
@@ -209,13 +212,16 @@ def optimize_for_production() -> dict:
 
 
 class APICallCounter:
-    """Track API call usage to monitor rate limits."""
+    """Track API call usage to monitor rate limits (OpenRouter aware)."""
 
     def __init__(self):
         """Initialize counter."""
         self.calls_this_minute = 0
         self.last_reset = None
         self.total_calls_today = 0
+        # OpenRouter free tier: varies by model, typically 10-20 req/min
+        # We use a conservative estimate of 10 req/min to be safe
+        self.rate_limit_per_minute = 10
 
     def _check_and_reset_if_needed(self):
         """Reset minute counter if a minute has passed."""
@@ -240,24 +246,29 @@ class APICallCounter:
         self._check_and_reset_if_needed()
         self.calls_this_minute += count
         self.total_calls_today += count
-        logger.debug(f"API call recorded: {count} (minute: {self.calls_this_minute}, today: {self.total_calls_today})")
+        remaining = self.get_remaining_quota()
+        logger.debug(f"API call recorded: {count} (minute: {self.calls_this_minute}/{self.rate_limit_per_minute}, remaining: {remaining}, today: {self.total_calls_today})")
 
     def get_remaining_quota(self) -> int:
-        """Get remaining API calls before hitting 5 req/min limit."""
+        """Get remaining API calls before hitting OpenRouter rate limit."""
         self._check_and_reset_if_needed()
-        return max(0, 5 - self.calls_this_minute)
+        return max(0, self.rate_limit_per_minute - self.calls_this_minute)
 
     def can_make_call(self) -> bool:
         """Check if we have quota remaining."""
-        return self.get_remaining_quota() > 0
+        remaining = self.get_remaining_quota()
+        if remaining <= 0:
+            logger.warning(f"Rate limit reached: {self.calls_this_minute}/{self.rate_limit_per_minute} calls this minute")
+        return remaining > 0
 
     def get_stats(self) -> dict:
         """Get usage statistics."""
         return {
             "calls_this_minute": self.calls_this_minute,
+            "rate_limit_per_minute": self.rate_limit_per_minute,
             "remaining_quota": self.get_remaining_quota(),
             "total_calls_today": self.total_calls_today,
-            "will_exceed_limit": self.calls_this_minute > 5
+            "will_exceed_limit": self.calls_this_minute >= self.rate_limit_per_minute
         }
 
 

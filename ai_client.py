@@ -1,5 +1,6 @@
 """Abstraction layer for AI providers (Gemini or OpenRouter)."""
 import requests
+import time
 from logging_config import logger
 from config import Config
 
@@ -65,53 +66,86 @@ class AIClient:
         temperature: float,
         timeout: int
     ) -> str:
-        """Generate content using OpenRouter API."""
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
+        """Generate content using OpenRouter API with rate limit handling."""
+        max_retries = 3
+        retry_delay = 1
 
-            messages = []
-            if system_instruction:
+        for attempt in range(max_retries):
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
+
+                messages = []
+                if system_instruction:
+                    messages.append({
+                        "role": "system",
+                        "content": system_instruction
+                    })
+
                 messages.append({
-                    "role": "system",
-                    "content": system_instruction
+                    "role": "user",
+                    "content": prompt
                 })
 
-            messages.append({
-                "role": "user",
-                "content": prompt
-            })
+                payload = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                }
 
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": temperature,
-            }
+                logger.debug(f"OpenRouter request (attempt {attempt + 1}/{max_retries}): {self.model}")
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout
+                )
 
-            logger.debug(f"Sending request to OpenRouter: {self.model}")
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=timeout
-            )
+                # Check for rate limit (429)
+                if response.status_code == 429:
+                    # Extract retry-after if available
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            wait_time = int(retry_after)
+                        except ValueError:
+                            wait_time = retry_delay * (2 ** attempt)
+                    else:
+                        wait_time = retry_delay * (2 ** attempt)
 
-            response.raise_for_status()
-            result = response.json()
+                    error_data = response.json()
+                    error_msg = error_data.get("error", {}).get("message", "Rate limited")
+                    logger.warning(
+                        f"OpenRouter rate limited (429): {error_msg}. "
+                        f"Retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})"
+                    )
 
-            if "choices" not in result or not result["choices"]:
-                raise ValueError("No content in OpenRouter response")
+                    if attempt < max_retries - 1:
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise requests.exceptions.HTTPError(
+                            f"Rate limited after {max_retries} attempts: {error_msg}"
+                        )
 
-            return result["choices"][0]["message"]["content"]
+                response.raise_for_status()
+                result = response.json()
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"OpenRouter API error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Error generating content with OpenRouter: {e}")
-            raise
+                if "choices" not in result or not result["choices"]:
+                    raise ValueError("No content in OpenRouter response")
+
+                return result["choices"][0]["message"]["content"]
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"OpenRouter API error (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    raise
+            except Exception as e:
+                logger.error(f"Error generating content with OpenRouter (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    raise
 
     def _gemini_generate(
         self,
