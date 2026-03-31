@@ -78,10 +78,9 @@ async def get_alerts(
             title = article.get("title", "")
             content = article.get("content", "")
 
-            # Skip articles that are not relevant security content
-            if not is_relevant_security_article(title, content):
-                filtered_count += 1
-                continue
+            # Note: Articles are already filtered during ingestion (real_time.py)
+            # Double-checking here is unnecessary and causes API calls
+            # Articles in the database should already be security-relevant
 
             # Try to get analysis from cache
             analysis = cache.get_analysis(title, content)
@@ -105,7 +104,7 @@ async def get_alerts(
                 title=title,
                 link=article.get("link", ""),
                 date=article.get("date", ""),
-                analysis=analysis,
+                analysis=analysis or f"[Pending analysis - {len(content)} chars of content available]",
                 tags=tags,
             )
             all_alerts.append(alert)
@@ -175,6 +174,7 @@ async def get_alerts(
         )
 
     except Exception as e:
+        logger.error(f"Error in get_alerts: {e}", exc_info=True)
         return AlertsListResponse(
             alerts=[],
             total_count=0,
