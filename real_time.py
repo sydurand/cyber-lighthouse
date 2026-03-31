@@ -2,13 +2,12 @@
 from datetime import datetime
 import feedparser
 import time
-from google import genai
-from google.genai import types
 
 from config import Config
 from logging_config import logger
 from database import Database
 from cache import get_cache
+from ai_client import get_ai_client
 from optimization import (
     should_analyze_article,
     detect_similar_articles,
@@ -22,8 +21,8 @@ from utils import (
     get_embedding_model
 )
 
-# Initialize Gemini client
-client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+# Initialize AI client (Gemini or OpenRouter)
+ai_client = get_ai_client()
 
 # Initialize database and cache
 db = Database()
@@ -59,7 +58,7 @@ def analyze_article_with_gemini(title: str, content: str) -> str:
     """
     Perform rapid AI analysis of a security article.
 
-    Uses Gemini to generate a quick SOC-level alert analysis.
+    Uses the configured AI provider (Gemini or OpenRouter) to generate a quick SOC-level alert analysis.
     Checks cache first to reduce API calls.
 
     Args:
@@ -67,7 +66,7 @@ def analyze_article_with_gemini(title: str, content: str) -> str:
         content: Article content
 
     Returns:
-        Analysis text from Gemini (cached or fresh)
+        Analysis text from AI provider (cached or fresh)
     """
     # Check cache first
     cached_response = cache.get_analysis(title, content)
@@ -82,32 +81,28 @@ def analyze_article_with_gemini(title: str, content: str) -> str:
 
     prompt = f"Title: {title}\nContent: {content}"
 
-    instruction = """
-    You are a SOC analyst. Perform an ultra-fast alert analysis of this article.
-    Provide ONLY this format, be very concise (1 line max per bullet point):
-    🚨 **ALERT**: [Summary in 1 sentence]
-    💥 **IMPACT**: [Who/What is affected]
-    🏷️ **TAGS**: [#Ransomware, #CVE-XXXX, #Phishing...]
-    """
+    instruction = """You are a SOC analyst. Perform an ultra-fast alert analysis of this article.
+Provide ONLY this format, be very concise (1 line max per bullet point):
+🚨 **ALERT**: [Summary in 1 sentence]
+💥 **IMPACT**: [Who/What is affected]
+🏷️ **TAGS**: [#Ransomware, #CVE-XXXX, #Phishing...]"""
 
     try:
-        logger.debug(f"Sending article to Gemini for analysis: {title[:50]}...")
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=instruction,
-                temperature=Config.GEMINI_TEMPERATURE_REALTIME,
-            ),
+        logger.debug(f"Sending article to AI provider for analysis: {title[:50]}...")
+        response_text = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=Config.GEMINI_TEMPERATURE_REALTIME,
+            timeout=Config.GEMINI_TIMEOUT
         )
 
         # Cache the response
-        cache.set_analysis(title, content, response.text)
+        cache.set_analysis(title, content, response_text)
         call_counter.add_call()
 
-        return response.text
+        return response_text
     except Exception as e:
-        logger.error(f"Gemini analysis failed: {e}")
+        logger.error(f"AI analysis failed: {e}")
         return f"Analysis unavailable: {e}"
 
 

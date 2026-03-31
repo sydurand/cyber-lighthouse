@@ -182,9 +182,8 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
         Formatted alert text
     """
     try:
-        from google import genai
-        from google.genai import types
         from config import Config
+        from ai_client import get_ai_client
         from optimization import get_call_counter
 
         logger.debug(f"[AI_TASK] Generating rapid alert for topic: {title[:50]}...")
@@ -194,9 +193,7 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
             logger.warning("Rate limit low, skipping rapid alert generation")
             return f"New topic: {title}"
 
-        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
-
-        # Generate rapid alert for new topic
+        ai_client = get_ai_client()
 
         prompt = f"""New security topic detected:
 
@@ -212,17 +209,15 @@ Format:
         instruction = """You are a SOC analyst creating urgent threat alerts.
 Be concise and highlight the most critical information."""
 
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=instruction,
-                temperature=0.2,
-            ),
+        alert_text = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.2,
+            timeout=60
         )
 
         call_counter.add_call()
-        alert_text = response.text.strip()
+        alert_text = alert_text.strip()
 
         logger.debug(f"[AI_TASK] Alert generated: {alert_text[:80]}...")
         return alert_text

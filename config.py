@@ -9,7 +9,11 @@ load_dotenv()
 class Config:
     """Configuration class that loads settings from environment variables."""
 
-    # Google Gemini API
+    # AI Provider Selection
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
+    # Legacy Google Gemini API (for backward compatibility)
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
@@ -58,10 +62,10 @@ class Config:
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""
-        if not cls.GOOGLE_API_KEY:
+        if not cls.OPENROUTER_API_KEY and not cls.GOOGLE_API_KEY:
             raise ValueError(
-                "GOOGLE_API_KEY environment variable is required. "
-                "Set it in .env file or export it as an environment variable."
+                "Either OPENROUTER_API_KEY or GOOGLE_API_KEY environment variable is required. "
+                "Set one of them in .env file or export it as an environment variable."
             )
         return True
 

@@ -1,17 +1,14 @@
 """Daily threat intelligence summary generation and archival."""
 from datetime import datetime, timedelta
 import os
-from google import genai
-from google.genai import types
 
 from config import Config
 from logging_config import logger
 from database import Database
+from ai_client import get_ai_client
 from utils import send_teams_notification
 import feedparser
 
-# Initialize Gemini client
-client = genai.Client(api_key=Config.GOOGLE_API_KEY)
 db = Database()
 
 
@@ -157,19 +154,16 @@ Expected Markdown Format:
 - **Monitoring Focus**: (What to watch for)
 """
 
-    logger.info(f"Generating summary for {len(topics)} topics with Gemini...")
+    logger.info(f"Generating summary for {len(topics)} topics with AI provider...")
 
     try:
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=super_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.1,
-            ),
+        ai_client = get_ai_client()
+        summary_text = ai_client.generate_content(
+            prompt=super_prompt,
+            system_instruction=system_instruction,
+            temperature=0.1,
+            timeout=120
         )
-
-        summary_text = response.text
 
         # Display summary
         logger.info("\n" + "=" * 70)

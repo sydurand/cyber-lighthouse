@@ -197,9 +197,8 @@ def is_relevant_security_article(title: str, content: str) -> bool:
 
     # Only call expensive AI if keywords inconclusive
     try:
-        from google import genai
-        from google.genai import types
         from config import Config
+        from ai_client import get_ai_client
         from optimization import get_call_counter
 
         # Check if we have quota for AI call
@@ -211,7 +210,7 @@ def is_relevant_security_article(title: str, content: str) -> bool:
             _relevance_cache[cache_key] = is_relevant
             return is_relevant
 
-        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+        ai_client = get_ai_client()
 
         prompt = f"""Title: {title}
 Content: {content[:500]}
@@ -219,21 +218,19 @@ Content: {content[:500]}
 Is this SPECIFIC security threat info (CVE, vulnerability, malware)? YES/NO"""
 
         instruction = """Determine if article has SPECIFIC security threat information.
-        YES = actionable threat/CVE/malware details. NO = generic news/podcast/summary."""
+YES = actionable threat/CVE/malware details. NO = generic news/podcast/summary."""
 
         logger.debug(f"Checking relevance with AI: {title[:50]}...")
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=instruction,
-                temperature=0.0,
-            ),
+        result = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.0,
+            timeout=30
         )
 
         call_counter.add_call()
-        result = response.text.strip().upper()
-        is_relevant = "YES" in result
+        result_text = result.strip().upper()
+        is_relevant = "YES" in result_text
 
         # Cache the result
         _relevance_cache[cache_key] = is_relevant
@@ -276,9 +273,8 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
 
     # Only call AI if no keywords found (expensive operation)
     try:
-        from google import genai
-        from google.genai import types
         from config import Config
+        from ai_client import get_ai_client
         from optimization import get_call_counter
 
         # Check if we can make API call
@@ -287,7 +283,7 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
             logger.warning(f"Rate limit approaching, using keyword fallback for tags")
             return fallback_tags
 
-        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+        ai_client = get_ai_client()
 
         prompt = f"""Article: {title}
 
@@ -299,20 +295,18 @@ Return ONLY tags, one per line."""
         instruction = """Extract concise security tags: CVE numbers, threat types, or attack vectors."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=instruction,
-                temperature=0.0,
-            ),
+        response_text = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.0,
+            timeout=30
         )
 
         call_counter.add_call()
 
         # Parse tags from response
         tags = []
-        for line in response.text.strip().split('\n'):
+        for line in response_text.strip().split('\n'):
             tag = line.strip()
             if tag.startswith('#'):
                 tags.append(tag)
@@ -420,9 +414,8 @@ def deduplicate_alerts_with_gemini(alerts: list) -> dict:
         }
 
     try:
-        from google import genai
-        from google.genai import types
         from config import Config
+        from ai_client import get_ai_client
         from optimization import get_call_counter
 
         call_counter = get_call_counter()
@@ -432,7 +425,7 @@ def deduplicate_alerts_with_gemini(alerts: list) -> dict:
             logger.info(f"Rate limit low, skipping AI deduplication")
             return _deduplicate_by_keywords(alerts)
 
-        client = genai.Client(api_key=Config.GOOGLE_API_KEY)
+        ai_client = get_ai_client()
 
         # Limit to 15 alerts to reduce token usage and API calls
         alerts_to_analyze = alerts[:15]
@@ -453,20 +446,18 @@ JSON mapping alert number to primary number:
 
         instruction = """Identify duplicate alerts about same incident/CVE."""
 
-        logger.debug(f"Deduplicating {len(alerts_to_analyze)} alerts with Gemini...")
-        response = client.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=instruction,
-                temperature=0.0,
-            ),
+        logger.debug(f"Deduplicating {len(alerts_to_analyze)} alerts with AI provider...")
+        response_text = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.0,
+            timeout=60
         )
 
         call_counter.add_call()
 
         import json
-        response_text = response.text.strip()
+        response_text = response_text.strip()
 
         # Extract JSON from response
         if "```json" in response_text:
