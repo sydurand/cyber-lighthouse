@@ -111,7 +111,6 @@ async def get_alerts(
 
         # Submit batch for async processing if needed
         if articles_needing_tags:
-            import hashlib
             batch_id = hashlib.md5(str(articles_needing_tags).encode()).hexdigest()[:8]
             submit_task(
                 f"process_batch_{batch_id}",
