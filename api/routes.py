@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from fastapi import APIRouter, Query
+from fastapi.responses import HTMLResponse, JSONResponse
 import json
 import os
 import hashlib
@@ -19,11 +20,20 @@ from utils import (
     extract_tags_with_gemini,
     get_trending_tags,
 )
+from export_utils import (
+    detect_severity,
+    generate_report_toc,
+    export_alerts_to_markdown,
+    export_alerts_to_csv,
+    export_report_to_markdown,
+)
 from .models import (
     AlertsListResponse,
     AlertResponse,
     ReportsListResponse,
     ReportResponse,
+    ReportWithTOC,
+    ReportTOCItem,
     StatisticsResponse,
     SystemStatusResponse,
     CacheStatsResponse,
@@ -31,6 +41,8 @@ from .models import (
     ArticleResponse,
     ErrorResponse,
     FilterStats,
+    BookmarkResponse,
+    ExportResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -39,6 +51,9 @@ router = APIRouter(prefix="/api", tags=["api"])
 db = Database()
 cache = get_cache()
 call_counter = get_call_counter()
+
+# Bookmarks storage (in-memory, could be moved to DB later)
+bookmarks_db: Dict[int, Dict] = {}
 
 
 @router.get("/alerts", response_model=AlertsListResponse)
@@ -98,14 +113,20 @@ async def get_alerts(
                 })
                 tags = []  # Use empty tags for now
 
+            # Use analysis from database if available, otherwise use cache
+            display_analysis = analysis or article.get("analysis", "")
+            if not display_analysis:
+                display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
+
             alert = AlertResponse(
                 id=article.get("id", 0),
                 source=article.get("source", "Unknown"),
                 title=title,
                 link=article.get("link", ""),
                 date=article.get("date", ""),
-                analysis=analysis or f"[Pending analysis - {len(content)} chars of content available]",
+                analysis=display_analysis,
                 tags=tags,
+                severity=detect_severity(title, display_analysis or "", tags),
             )
             all_alerts.append(alert)
 
@@ -214,9 +235,22 @@ async def get_reports(
                 # Extract all synthesis reports
                 for key, entry in cache_data.items():
                     if entry.get('type') == 'synthesis':
+                        content = entry.get('content', 'Report not available')
+                        
+                        # Calculate articles_count dynamically if not set or 0
+                        articles_count = entry.get('articles_count', 0)
+                        if articles_count == 0 and content:
+                            # Count unique topics/articles mentioned in the report
+                            # Count bullet points in Major Trends and Technical Alerts sections
+                            import re
+                            # Count list items (lines starting with - or *)
+                            list_items = re.findall(r'^[\s]*[-*]\s+', content, re.MULTILINE)
+                            # Estimate articles count from list items (each topic has ~2-3 list items)
+                            articles_count = max(1, len(list_items) // 2)
+                        
                         report = ReportResponse(
-                            report_content=entry.get('content', 'Report not available'),
-                            articles_count=entry.get('articles_count', 0),
+                            report_content=content,
+                            articles_count=articles_count,
                             generated_date=entry.get('generated_date', datetime.now().strftime("%Y-%m-%d")),
                         )
                         reports.append(report)
@@ -365,6 +399,10 @@ async def search_articles(
 
         article_responses = []
         for article in paginated:
+            # Use analysis from database if available, otherwise from cache
+            analysis = article.get("analysis") or cache.get_analysis(
+                article.get("title", ""), article.get("content", "")
+            )
             article_obj = ArticleResponse(
                 id=article.get("id", 0),
                 source=article.get("source", "Unknown"),
@@ -372,9 +410,7 @@ async def search_articles(
                 content=article.get("content", ""),
                 link=article.get("link", ""),
                 date=article.get("date", ""),
-                analysis=cache.get_analysis(
-                    article.get("title", ""), article.get("content", "")
-                ),
+                analysis=analysis,
                 processed_for_daily=article.get("processed_for_daily", False),
             )
             article_responses.append(article_obj)
@@ -464,3 +500,171 @@ async def get_system_status() -> SystemStatusResponse:
             api_quota_total=5,
             api_quota_reset_in_seconds=60,
         )
+
+
+@router.get("/bookmarks", response_model=List[BookmarkResponse])
+async def get_bookmarks() -> List[BookmarkResponse]:
+    """Get all bookmarked alerts."""
+    try:
+        return list(bookmarks_db.values())
+    except Exception as e:
+        logger.error(f"Error fetching bookmarks: {e}")
+        return []
+
+
+@router.post("/bookmarks/toggle")
+async def toggle_bookmark(alert_id: int, title: str = "", source: str = "", date: str = "", link: str = "", severity: str = "medium"):
+    """Toggle bookmark for an alert."""
+    try:
+        if alert_id in bookmarks_db:
+            del bookmarks_db[alert_id]
+            return {"bookmarked": False, "message": "Bookmark removed"}
+        else:
+            bookmarks_db[alert_id] = {
+                "id": alert_id,
+                "title": title,
+                "source": source,
+                "date": date,
+                "link": link,
+                "severity": severity,
+                "bookmarked_at": datetime.now().isoformat()
+            }
+            return {"bookmarked": True, "message": "Bookmark added"}
+    except Exception as e:
+        logger.error(f"Error toggling bookmark: {e}")
+        return {"bookmarked": False, "error": str(e)}
+
+
+@router.get("/reports/{report_index}/toc")
+async def get_report_toc(report_index: int) -> ReportWithTOC:
+    """Get report with table of contents."""
+    try:
+        import json
+        from pathlib import Path
+
+        cache_file = Path("cache/gemini_responses.json")
+        if not cache_file.exists():
+            return ReportWithTOC(report=ReportResponse(report_content="", articles_count=0, generated_date=""), table_of_contents=[])
+
+        with open(cache_file, 'r') as f:
+            cache_data = json.load(f)
+
+        synthesis_reports = [
+            (key, entry) for key, entry in cache_data.items()
+            if entry.get('type') == 'synthesis'
+        ]
+        
+        if report_index >= len(synthesis_reports):
+            return ReportWithTOC(report=ReportResponse(report_content="", articles_count=0, generated_date=""), table_of_contents=[])
+        
+        key, entry = synthesis_reports[report_index]
+        content = entry.get('content', '')
+        toc_items = generate_report_toc(content)
+        
+        report = ReportResponse(
+            report_content=content,
+            articles_count=entry.get('articles_count', 0),
+            generated_date=entry.get('generated_date', ''),
+            report_id=key
+        )
+        
+        toc_items_formatted = [
+            ReportTOCItem(level=item['level'], text=item['text'], anchor=item['anchor'])
+            for item in toc_items
+        ]
+        
+        return ReportWithTOC(report=report, table_of_contents=toc_items_formatted)
+    except Exception as e:
+        logger.error(f"Error generating report TOC: {e}")
+        return ReportWithTOC(report=ReportResponse(report_content="", articles_count=0, generated_date=""), table_of_contents=[])
+
+
+@router.get("/export/alerts")
+async def export_alerts(format: str = Query("markdown", pattern="^(markdown|csv)$"), limit: int = Query(100, ge=1, le=1000)):
+    """Export alerts to markdown or CSV."""
+    try:
+        articles = db.get_all_articles()
+        articles_sorted = sorted(articles, key=lambda x: x.get("date", ""), reverse=True)[:limit]
+        
+        alerts_data = []
+        for article in articles_sorted:
+            title = article.get("title", "")
+            content = article.get("content", "")
+            # Use analysis from database if available, otherwise from cache
+            analysis = article.get("analysis") or cache.get_analysis(title, content)
+            tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+            from utils import _tag_cache
+            tags = _tag_cache.get(tags_cache_key, [])
+            severity = detect_severity(title, analysis or "", tags)
+
+            alerts_data.append({
+                'id': article.get('id', 0),
+                'title': title,
+                'source': article.get('source', 'Unknown'),
+                'date': article.get('date', ''),
+                'link': article.get('link', ''),
+                'analysis': analysis or '',
+                'tags': tags,
+                'severity': severity
+            })
+        
+        if format == "csv":
+            content = export_alerts_to_csv(alerts_data)
+            filename = f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        else:
+            content = export_alerts_to_markdown(alerts_data)
+            filename = f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        
+        return {
+            "content": content,
+            "filename": filename,
+            "format": format,
+            "count": len(alerts_data)
+        }
+    except Exception as e:
+        logger.error(f"Error exporting alerts: {e}")
+        return {"error": str(e)}
+
+
+@router.get("/export/report/{report_index}")
+async def export_report(report_index: int, format: str = Query("markdown", pattern="^(markdown)$")):
+    """Export a specific report."""
+    try:
+        import json
+        from pathlib import Path
+
+        cache_file = Path("cache/gemini_responses.json")
+        if not cache_file.exists():
+            return {"error": "No reports available"}
+
+        with open(cache_file, 'r') as f:
+            cache_data = json.load(f)
+
+        synthesis_reports = [
+            (key, entry) for key, entry in cache_data.items()
+            if entry.get('type') == 'synthesis'
+        ]
+        
+        if report_index >= len(synthesis_reports):
+            return {"error": "Report not found"}
+        
+        key, entry = synthesis_reports[report_index]
+        content = entry.get('content', '')
+        date = entry.get('generated_date', 'unknown')
+        
+        if format == "markdown":
+            export_content = export_report_to_markdown(content, date)
+            filename = f"report_{date}.md"
+        else:
+            export_content = content
+            filename = f"report_{date}.txt"
+        
+        return {
+            "content": export_content,
+            "filename": filename,
+            "format": format
+        }
+    except Exception as e:
+        logger.error(f"Error exporting report: {e}")
+        return {"error": str(e)}
+

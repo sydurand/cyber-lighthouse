@@ -29,6 +29,7 @@ class Database:
                         content TEXT,
                         link TEXT UNIQUE NOT NULL,
                         content_hash TEXT,
+                        analysis TEXT,
                         date TEXT NOT NULL,
                         processed_for_daily BOOLEAN DEFAULT 0,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -96,6 +97,34 @@ class Database:
             return False
         except sqlite3.Error as e:
             logger.error(f"Error adding article: {e}")
+            return False
+
+    def set_article_analysis(self, link: str, analysis: str) -> bool:
+        """
+        Update the analysis for an article by link.
+
+        Args:
+            link: Article link
+            analysis: Analysis text to store
+
+        Returns:
+            True if updated, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE articles
+                    SET analysis = ?
+                    WHERE link = ?
+                """, (analysis, link))
+                conn.commit()
+            success = cursor.rowcount > 0
+            if success:
+                logger.debug(f"Analysis stored for article: {link[:60]}...")
+            return success
+        except sqlite3.Error as e:
+            logger.error(f"Error setting article analysis: {e}")
             return False
 
     def get_unprocessed_articles(self) -> list:

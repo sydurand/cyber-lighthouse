@@ -18,7 +18,7 @@ from optimization import (
 from utils import (
     retry_with_backoff, validate_rss_article, extract_article_content, sanitize_title,
     fetch_full_article_content, send_teams_notification, cluster_articles_with_embeddings,
-    get_embedding_model
+    get_embedding_model, is_podcast_article
 )
 
 # Initialize AI client (Gemini or OpenRouter)
@@ -251,6 +251,7 @@ def process_new_articles():
     existing_articles = db.get_unprocessed_articles()
     new_articles_count = 0
     skipped_similar = 0
+    skipped_podcasts = 0
     cached_analyses = 0
     articles_queued = 0
     articles_scraped = 0
@@ -270,6 +271,12 @@ def process_new_articles():
             for article in articles:
                 # Validate article has required fields
                 if not validate_rss_article(article):
+                    continue
+
+                # Skip podcast episodes/announcements early to save AI tokens
+                if is_podcast_article(article):
+                    skipped_podcasts += 1
+                    logger.debug(f"Skipping podcast article: {article.title[:60]}...")
                     continue
 
                 # Check if article already exists
@@ -317,6 +324,8 @@ def process_new_articles():
                     link=article.link,
                     date=datetime.now().strftime("%Y-%m-%d")
                 ):
+                    # Store analysis in database
+                    db.set_article_analysis(article.link, analysis)
                     # Get the article ID for clustering
                     try:
                         import sqlite3
@@ -358,9 +367,10 @@ def process_new_articles():
     logger.info(f"  New articles detected: {new_articles_count}")
     logger.info(f"  Full articles scraped: {articles_scraped}")
     logger.info(f"  Similar articles skipped: {skipped_similar} (saved {skipped_similar} API calls)")
+    logger.info(f"  Podcast articles filtered: {skipped_podcasts} (saved ~{skipped_podcasts} API calls)")
     logger.info(f"  Cached analyses used: {cached_analyses} (saved {cached_analyses} API calls)")
     logger.info(f"  Fresh API analyses: {new_articles_count - cached_analyses}")
-    logger.info(f"  Total API calls saved: {skipped_similar + cached_analyses}")
+    logger.info(f"  Total API calls saved: {skipped_similar + skipped_podcasts + cached_analyses}")
     logger.info(f"  Articles queued for clustering: {articles_queued}")
     logger.info(f"  New topics created: {clustering_stats['new_topics']}")
     logger.info(f"  Articles grouped to topics: {clustering_stats['grouped_articles']}")
