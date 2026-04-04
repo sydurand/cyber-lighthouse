@@ -1,8 +1,9 @@
 /**
  * Vue 3 Application for Cyber-Lighthouse Dashboard
+ * Enhanced with all UI improvements
  */
 
-const { createApp, ref, computed, onMounted, watch } = Vue;
+const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
 const app = createApp({
   setup() {
@@ -16,13 +17,80 @@ const app = createApp({
     const allArticles = ref([]);
     const searchQuery = ref("");
     const filterSource = ref("");
+    const filterTag = ref("");
+    const filterSeverity = ref("");
     const alertsOffset = ref(0);
+    const alertsLimit = ref(20);
+    const alertsPage = ref(1);
+    const alertsTotalCount = ref(0);
+    const hasMoreAlerts = ref(true);
     const filterStats = ref(null);
     const trendingTags = ref({});
+    const bookmarks = ref([]);
+    const showBookmarksOnly = ref(false);
+    const lastRefreshTime = ref(null);
+    const newAlertsCount = ref(0);
+    const previousAlertCount = ref(0);
+    const toastMessages = ref([]);
+    const theme = ref(localStorage.getItem("theme") || "dark");
+
+    // History pagination
+    const historyPage = ref(1);
+    const historyPageSize = ref(50);
+    const historyDateFrom = ref("");
+    const historyDateTo = ref("");
+    const historyTotalCount = ref(0);
+
+    // Reports
+    const expandedReports = ref(new Set());
+    const reportsWithTOC = ref({});
+
+    // Alerts collapse
+    const expandedAlerts = ref(new Set());
+    const collapseOldAlerts = ref(true);
+
+    // Keyboard shortcuts modal
+    const showShortcutsModal = ref(false);
+
+    // Export dropdown
+    const showExportMenu = ref(false);
+
+    // Mobile menu
+    const showMobileMenu = ref(false);
 
     // Charts
     let chartBySource = null;
     let chartByDate = null;
+
+    // Toast notification system
+    const showToast = (message, type = "info", duration = 3000) => {
+      const id = Date.now();
+      toastMessages.value.push({ id, message, type });
+      setTimeout(() => {
+        toastMessages.value = toastMessages.value.filter(t => t.id !== id);
+      }, duration);
+    };
+
+    // Severity colors
+    const getSeverityColor = (severity) => {
+      const colors = {
+        critical: "red",
+        high: "orange",
+        medium: "yellow",
+        low: "green"
+      };
+      return colors[severity] || "yellow";
+    };
+
+    const getSeverityIcon = (severity) => {
+      const icons = {
+        critical: "fa-radiation",
+        high: "fa-exclamation-triangle",
+        medium: "fa-exclamation-circle",
+        low: "fa-info-circle"
+      };
+      return icons[severity] || "fa-info-circle";
+    };
 
     // Computed
     const uniqueSources = computed(() => {
@@ -46,15 +114,134 @@ const app = createApp({
         filtered = filtered.filter((a) => a.source === filterSource.value);
       }
 
+      if (filterTag.value) {
+        filtered = filtered.filter((a) => 
+          a.tags && a.tags.some(tag => tag.toLowerCase().includes(filterTag.value.toLowerCase()))
+        );
+      }
+
       return filtered;
     });
 
-    // Deduplication function - groups similar alerts from multiple sources
+    const paginatedHistory = computed(() => {
+      const start = (historyPage.value - 1) * historyPageSize.value;
+      const end = start + historyPageSize.value;
+      return filteredArticles.value.slice(start, end);
+    });
+
+    const totalHistoryPages = computed(() => {
+      return Math.ceil(filteredArticles.value.length / historyPageSize.value);
+    });
+
+    const alertsCount = computed(() => alerts.value.length);
+    const reportsCount = computed(() => reports.value.length);
+    const bookmarksCount = computed(() => bookmarks.value.length);
+
+    // Alerts pagination
+    const alertsTotalPages = computed(() => Math.ceil(alertsTotalCount.value / alertsLimit.value) || 1);
+    const alertsPageStart = computed(() => (alertsPage.value - 1) * alertsLimit.value + 1);
+    const alertsPageEnd = computed(() => Math.min(alertsPage.value * alertsLimit.value, alertsTotalCount.value));
+
+    const filteredAlerts = computed(() => {
+      if (!filterSeverity.value) {
+        return alerts.value;
+      }
+      return alerts.value.filter(alert => 
+        alert.severity === filterSeverity.value
+      );
+    });
+
+    const getFilteredCount = (severity) => {
+      return alerts.value.filter(alert => alert.severity === severity).length;
+    };
+
+    const getSeverityCount = (severity) => {
+      return alerts.value.filter(alert => alert.severity === severity).length;
+    };
+
+    const getSeverityPercentage = (severity) => {
+      const count = alerts.value.filter(alert => alert.severity === severity).length;
+      return alerts.value.length > 0 ? (count / alerts.value.length * 100) : 0;
+    };
+
+    const getThreatLevel = () => {
+      const critical = getSeverityCount('critical');
+      const high = getSeverityCount('high');
+      const total = alerts.value.length;
+      
+      if (total === 0) return 'None';
+      if (critical > 5 || (critical / total > 0.3)) return 'Elevated';
+      if (critical > 2 || high > 5) return 'High';
+      if (critical > 0 || high > 2) return 'Moderate';
+      return 'Low';
+    };
+
+    const getThreatLevelColor = () => {
+      const level = getThreatLevel();
+      const colors = {
+        'Elevated': 'text-red-400',
+        'High': 'text-orange-400',
+        'Moderate': 'text-yellow-400',
+        'Low': 'text-green-400',
+        'None': 'text-slate-400'
+      };
+      return colors[level] || 'text-slate-400';
+    };
+
+    const getThreatLevelIcon = () => {
+      const level = getThreatLevel();
+      const icons = {
+        'Elevated': 'fa-radiation',
+        'High': 'fa-exclamation-triangle',
+        'Moderate': 'fa-exclamation-circle',
+        'Low': 'fa-shield-alt',
+        'None': 'fa-check-circle'
+      };
+      return icons[level] || 'fa-question-circle';
+    };
+
+    const isAlertOld = (alertDate) => {
+      if (!collapseOldAlerts.value) return false;
+      const alertTime = new Date(alertDate).getTime();
+      const now = Date.now();
+      return (now - alertTime) > 24 * 60 * 60 * 1000; // 24 hours
+    };
+
+    const isReportExpanded = (index) => expandedReports.value.has(index);
+    
+    const toggleReportExpand = (index) => {
+      const newSet = new Set(expandedReports.value);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      expandedReports.value = newSet;
+    };
+
+    const isAlertExpanded = (index) => expandedAlerts.value.has(index);
+    
+    const toggleAlertExpand = (index) => {
+      const newSet = new Set(expandedAlerts.value);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      expandedAlerts.value = newSet;
+    };
+
+    const toggleTheme = () => {
+      theme.value = theme.value === "dark" ? "light" : "dark";
+      localStorage.setItem("theme", theme.value);
+      document.documentElement.classList.toggle("light-theme", theme.value === "light");
+    };
+
+    // Deduplication function
     const deduplicateAlerts = (alertsList) => {
       const grouped = new Map();
 
       alertsList.forEach(alert => {
-        // Create a key based on title similarity (first 50 chars)
         const key = alert.title.substring(0, 50).toLowerCase().trim();
 
         if (!grouped.has(key)) {
@@ -64,14 +251,12 @@ const app = createApp({
           });
         } else {
           const existing = grouped.get(key);
-          // Add source if not already present
           if (!existing.sources.some(s => s.source === alert.source)) {
             existing.sources.push({ source: alert.source, link: alert.link });
           }
         }
       });
 
-      // Convert map to array and format
       return Array.from(grouped.values()).map(alert => ({
         ...alert,
         multiSource: alert.sources.length > 1,
@@ -80,24 +265,30 @@ const app = createApp({
     };
 
     // Methods
-    const refreshData = async () => {
+    const refreshData = async (isAutoRefresh = false) => {
       isLoading.value = true;
       try {
-        // Parallel requests
-        const [alertsData, reportsData, statsData, statusData, articlesData] =
+        const offset = (alertsPage.value - 1) * alertsLimit.value;
+        const [alertsData, reportsData, statsData, statusData, articlesData, bookmarksData] =
           await Promise.all([
-            apiClient.getAlerts(20, alertsOffset.value),
+            apiClient.getAlerts(alertsLimit.value, offset),
             apiClient.getReports(),
             apiClient.getStatistics(),
             apiClient.getSystemStatus(),
-            apiClient.searchArticles({ limit: 1000 }),
+            apiClient.searchArticles({ limit: 10000 }),
+            apiClient.getBookmarks(),
           ]);
 
-        // Deduplicate alerts by similar title
         const rawAlerts = alertsData.alerts || [];
         alerts.value = deduplicateAlerts(rawAlerts);
+        alertsTotalCount.value = alertsData.total_count || 0;
 
-        // Get filter stats and trending tags
+        // Check for new alerts
+        if (previousAlertCount.value > 0 && rawAlerts.length > previousAlertCount.value) {
+          newAlertsCount.value = rawAlerts.length - previousAlertCount.value;
+        }
+        previousAlertCount.value = rawAlerts.length;
+
         filterStats.value = alertsData.filter_stats || null;
         trendingTags.value = alertsData.filter_stats?.trending_tags || {};
 
@@ -105,25 +296,135 @@ const app = createApp({
         statistics.value = statsData;
         systemStatus.value = statusData;
         allArticles.value = articlesData.articles || [];
+        historyTotalCount.value = articlesData.total_count || 0;
+        bookmarks.value = bookmarksData || [];
 
-        // Update charts when stats change
+        lastRefreshTime.value = new Date();
         updateCharts();
+
+        if (!isAutoRefresh) {
+          showToast("Data refreshed successfully", "success");
+        }
       } catch (error) {
         console.error("Error refreshing data:", error);
-        alert("Error loading data. Please check the server connection.");
+        showToast("Error loading data. Please check server connection.", "error", 5000);
       } finally {
         isLoading.value = false;
       }
     };
 
+    const changeAlertsPage = async (newPage) => {
+      if (newPage < 1) return;
+      const totalPages = Math.ceil(alertsTotalCount.value / alertsLimit.value) || 1;
+      if (newPage > totalPages) return;
+
+      alertsPage.value = newPage;
+      await refreshData(false);
+
+      // Scroll to top of alerts section
+      const alertsSection = document.querySelector('[v-show*="alerts"]');
+      if (alertsSection) {
+        alertsSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    };
+
+    const changeHistoryPage = (page) => {
+      historyPage.value = page;
+    };
+
+    const applyHistoryFilters = () => {
+      historyPage.value = 1;
+    };
+
+    const toggleBookmark = async (alert) => {
+      try {
+        const result = await apiClient.toggleBookmark(
+          alert.id,
+          {
+            title: alert.title,
+            source: alert.source,
+            date: alert.date,
+            link: alert.link,
+            severity: alert.severity || "medium"
+          }
+        );
+        
+        if (result.bookmarked) {
+          showToast("Alert bookmarked", "success");
+        } else {
+          showToast("Bookmark removed", "info");
+        }
+        
+        // Refresh bookmarks
+        bookmarks.value = await apiClient.getBookmarks();
+      } catch (error) {
+        showToast("Error toggling bookmark", "error");
+      }
+    };
+
+    const isBookmarked = (alertId) => {
+      return bookmarks.value.some(b => b.id === alertId);
+    };
+
+    const exportAlerts = async (format) => {
+      try {
+        const result = await apiClient.exportAlerts(format, 1000);
+        downloadFile(result.content, result.filename, format === "csv" ? "text/csv" : "text/markdown");
+        showToast(`Alerts exported to ${format.toUpperCase()}`, "success");
+        showExportMenu.value = false;
+      } catch (error) {
+        showToast("Error exporting alerts", "error");
+      }
+    };
+
+    const exportReport = async (index, format) => {
+      try {
+        const result = await apiClient.exportReport(index, format);
+        if (result.error) {
+          showToast(result.error, "error");
+          return;
+        }
+        downloadFile(result.content, result.filename, "text/markdown");
+        showToast("Report exported", "success");
+      } catch (error) {
+        showToast("Error exporting report", "error");
+      }
+    };
+
+    const downloadFile = (content, filename, mimeType) => {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    const filterByTag = (tag) => {
+      filterTag.value = filterTag.value === tag ? "" : tag;
+      historyPage.value = 1;
+      if (currentTab.value !== "articles") {
+        currentTab.value = "articles";
+      }
+    };
+
+    const filterBySeverity = (severity) => {
+      filterSeverity.value = filterSeverity.value === severity ? "" : severity;
+      if (currentTab.value !== "alerts") {
+        currentTab.value = "alerts";
+      }
+    };
+
+    const clearNotificationBadge = () => {
+      newAlertsCount.value = 0;
+    };
+
     const updateCharts = () => {
-      // Destroy old charts
-      if (chartBySource) {
-        chartBySource.destroy();
-      }
-      if (chartByDate) {
-        chartByDate.destroy();
-      }
+      if (chartBySource) chartBySource.destroy();
+      if (chartByDate) chartByDate.destroy();
 
       if (!statistics.value) return;
 
@@ -137,29 +438,29 @@ const app = createApp({
           type: "doughnut",
           data: {
             labels: sources,
-            datasets: [
-              {
-                data: counts,
-                backgroundColor: [
-                  "#FF6384",
-                  "#36A2EB",
-                  "#FFCE56",
-                  "#4BC0C0",
-                  "#9966FF",
-                  "#FF9F40",
-                ],
-                borderColor: "#fff",
-                borderWidth: 2,
-              },
-            ],
+            datasets: [{
+              data: counts,
+              backgroundColor: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF", "#FF9F40"],
+              borderColor: "#fff",
+              borderWidth: 2,
+            }],
           },
           options: {
             responsive: true,
             maintainAspectRatio: true,
             plugins: {
-              legend: {
-                position: "bottom",
-              },
+              legend: { position: "bottom" },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed || 0;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    return `${label}: ${value} (${percentage}%)`;
+                  }
+                }
+              }
             },
           },
         });
@@ -175,31 +476,32 @@ const app = createApp({
           type: "bar",
           data: {
             labels: dates,
-            datasets: [
-              {
-                label: "Articles",
-                data: counts,
-                backgroundColor: "#36A2EB",
-                borderColor: "#2196F3",
-                borderWidth: 1,
-              },
-            ],
+            datasets: [{
+              label: "Articles",
+              data: counts,
+              backgroundColor: "#36A2EB",
+              borderColor: "#2196F3",
+              borderWidth: 1,
+            }],
           },
           options: {
             responsive: true,
             maintainAspectRatio: true,
             scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  stepSize: 1,
-                },
-              },
+              y: { beginAtZero: true, ticks: { stepSize: 1 } },
             },
             plugins: {
-              legend: {
-                display: false,
-              },
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  title: function(items) {
+                    return `Date: ${items[0].label}`;
+                  },
+                  label: function(context) {
+                    return `${context.parsed.y} articles`;
+                  }
+                }
+              }
             },
           },
         });
@@ -207,18 +509,38 @@ const app = createApp({
     };
 
     const autoRefresh = () => {
-      // Refresh every 30 seconds
       setInterval(() => {
-        if (document.hidden) return; // Don't refresh if tab is not visible
-        refreshData();
+        if (document.hidden) return;
+        refreshData(true);
       }, 30000);
     };
 
-    // Simple markdown-like renderer
+    // Keyboard shortcuts
+    const handleKeyboard = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") {
+        return;
+      }
+
+      if (e.key === "?") {
+        e.preventDefault();
+        showShortcutsModal.value = !showShortcutsModal.value;
+      } else if (e.key >= "1" && e.key <= "4") {
+        const tabs = ["alerts", "reports", "stats", "articles"];
+        currentTab.value = tabs[parseInt(e.key) - 1];
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        refreshData();
+      } else if (e.key === "/") {
+        e.preventDefault();
+        const searchInput = document.querySelector('input[placeholder*="Search"]');
+        if (searchInput) searchInput.focus();
+      }
+    };
+
+    // Markdown renderer
     const renderMarkdown = (content) => {
       if (!content) return "";
 
-      // Try to use markdown-it if available
       if (typeof window.markdownit === 'function') {
         try {
           const md = window.markdownit({
@@ -232,24 +554,157 @@ const app = createApp({
         }
       }
 
-      // Fallback: simple formatting
       let html = escapeHtml(content);
-
-      // Convert bold **text** to <strong>
       html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-
-      // Convert italic *text* to <em>
       html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-      // Convert headers # to <h2>, ## to <h3>, etc
       html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
       html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
       html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
-
-      // Convert newlines to <br>
       html = html.replace(/\n/g, '<br>');
 
       return html;
+    };
+
+    const renderReport = (content) => {
+      if (!content) return "";
+
+      // Escape HTML first
+      let html = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      // Headers (process in order to avoid conflicts)
+      html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+      html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+      html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+      html = html.replace(/^#### (.*$)/gm, '<h4>$1</h4>');
+      
+      // Bold (before italic to avoid conflicts)
+      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      
+      // Italic
+      html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+      
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      
+      // Horizontal rules
+      html = html.replace(/^---$/gm, '<hr>');
+      html = html.replace(/^\*\*\*$/gm, '<hr>');
+      
+      // Process lists with proper nesting based on indentation
+      const lines = html.split('\n');
+      const result = [];
+      let listItems = [];
+      
+      const closeList = () => {
+        if (listItems.length === 0) return;
+        
+        // Find base indentation (minimum)
+        const baseIndent = Math.min(...listItems.map(item => item.indent));
+        
+        // Build nested HTML structure
+        const buildNestedList = (items, parentIndent) => {
+          let html = '<ul>';
+          let i = 0;
+          
+          while (i < items.length) {
+            const item = items[i];
+            
+            if (item.indent === parentIndent) {
+              // Same level - regular list item
+              html += `<li>${item.content}</li>`;
+              i++;
+            } else if (item.indent > parentIndent) {
+              // Deeper level - nested list
+              const nestedItems = [];
+              while (i < items.length && items[i].indent > parentIndent) {
+                nestedItems.push(items[i]);
+                i++;
+              }
+              html += buildNestedList(nestedItems, nestedItems[0].indent);
+            } else {
+              // Shouldn't happen if called correctly
+              break;
+            }
+          }
+          
+          html += '</ul>';
+          return html;
+        };
+        
+        result.push(buildNestedList(listItems, baseIndent));
+        listItems = [];
+      };
+      
+      for (const line of lines) {
+        // Empty line - close current list
+        if (!line.trim()) {
+          closeList();
+          result.push('');
+          continue;
+        }
+        
+        // Skip lines that are already HTML headers
+        if (line.match(/^<(h[1-6])/)) {
+          closeList();
+          result.push(line);
+          continue;
+        }
+        
+        // Detect list items: optional whitespace + "- " + content
+        const match = line.match(/^(\s*)- (.+)$/);
+        if (match) {
+          const indent = match[1].length;
+          const content = match[2];
+          listItems.push({ indent, content });
+        } else {
+          // Not a list item - wrap in paragraph
+          closeList();
+          result.push(`<p>${line}</p>`);
+        }
+      }
+      
+      // Close any remaining list
+      closeList();
+      
+      html = result.join('\n');
+      
+      // Clean up multiple empty lines
+      html = html.replace(/\n{3,}/g, '\n\n');
+      
+      return html;
+    };
+
+    const renderAlertAnalysis = (content) => {
+      if (!content) return "";
+
+      // Check if content has ALERT/IMPACT/TAGS format
+      const hasStructuredFormat = content.includes('🚨') && content.includes('💥');
+
+      if (hasStructuredFormat) {
+        // Parse alert format: 🚨 ALERT, 💥 IMPACT, 🏷️ TAGS
+        let html = escapeHtml(content);
+
+        // Format ALERT section
+        html = html.replace(/🚨\s*\*\*ALERT\*\*:\s*/g, '<div class="mb-3"><div class="flex items-start gap-2 mb-1"><span class="text-red-400 font-bold text-xs uppercase tracking-wide flex-shrink-0">🚨 Alert</span></div><p class="text-slate-200 leading-relaxed">');
+
+        // Format IMPACT section  
+        html = html.replace(/\n💥\s*\*\*IMPACT\*\*:\s*/g, '</p></div><div class="mb-3 pt-3 border-t border-slate-700/50"><div class="flex items-start gap-2 mb-1"><span class="text-orange-400 font-bold text-xs uppercase tracking-wide flex-shrink-0">💥 Impact</span></div><p class="text-slate-300 leading-relaxed">');
+
+        // Remove TAGS section entirely (tags are shown in header)
+        html = html.replace(/\n🏷️\s*\*\*TAGS\*\*:\s*.+$/gm, '');
+
+        // Close any unclosed div tags
+        html = html.replace(/<\/p><\/div>$/g, '</p></div>');
+        html = html.replace(/<\/p>$/, '</p>');
+
+        return html;
+      }
+
+      // Fall back to regular markdown rendering
+      return renderMarkdown(content);
     };
 
     const escapeHtml = (text) => {
@@ -258,15 +713,48 @@ const app = createApp({
       return div.innerHTML;
     };
 
+    const formatTimestamp = (timestamp) => {
+      if (!timestamp) return "Never";
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString();
+    };
+
+    const generateReportAnchors = (content) => {
+      return content.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
+        const level = hashes.length;
+        const cleanText = text.replace(/[^\w\s-]/g, '').trim();
+        const anchor = cleanText.toLowerCase().replace(/\s+/g, '-');
+        return `<h${level} id="${anchor}">${text}</h${level}>`;
+      });
+    };
+
     // Watchers
     watch(alertsOffset, () => {
       refreshData();
+    });
+
+    watch(filterTag, () => {
+      historyPage.value = 1;
+    });
+
+    watch(filterSeverity, () => {
+      // Reset to show first page when filter changes
+      alertsOffset.value = 0;
     });
 
     // Lifecycle
     onMounted(() => {
       refreshData();
       autoRefresh();
+      document.addEventListener("keydown", handleKeyboard);
+      
+      // Apply saved theme
+      if (theme.value === "light") {
+        document.documentElement.classList.add("light-theme");
+      }
+      
+      // Expose filterByTag globally for onclick handlers in rendered HTML
+      window.filterByTag = filterByTag;
     });
 
     return {
@@ -279,14 +767,75 @@ const app = createApp({
       allArticles,
       searchQuery,
       filterSource,
+      filterTag,
+      filterSeverity,
       alertsOffset,
+      alertsPage,
+      alertsTotalCount,
+      alertsTotalPages,
+      alertsPageStart,
+      alertsPageEnd,
       filterStats,
       trendingTags,
+      bookmarks,
+      showBookmarksOnly,
+      lastRefreshTime,
+      newAlertsCount,
+      toastMessages,
+      theme,
+      historyPage,
+      historyPageSize,
+      historyDateFrom,
+      historyDateTo,
+      historyTotalCount,
+      expandedReports,
+      reportsWithTOC,
+      expandedAlerts,
+      collapseOldAlerts,
+      showShortcutsModal,
+      showExportMenu,
+      showMobileMenu,
       uniqueSources,
       filteredArticles,
+      paginatedHistory,
+      totalHistoryPages,
+      alertsCount,
+      reportsCount,
+      bookmarksCount,
+      filteredAlerts,
+      hasMoreAlerts,
       refreshData,
+      changeAlertsPage,
+      changeHistoryPage,
+      applyHistoryFilters,
+      toggleBookmark,
+      isBookmarked,
+      exportAlerts,
+      exportReport,
+      filterByTag,
+      filterBySeverity,
+      clearNotificationBadge,
       updateCharts,
       renderMarkdown,
+      renderReport,
+      renderAlertAnalysis,
+      formatTimestamp,
+      generateReportAnchors,
+      getSeverityColor,
+      getSeverityIcon,
+      getFilteredCount,
+      getSeverityCount,
+      getSeverityPercentage,
+      getThreatLevel,
+      getThreatLevelColor,
+      getThreatLevelIcon,
+      isAlertOld,
+      isReportExpanded,
+      toggleReportExpand,
+      isAlertExpanded,
+      toggleAlertExpand,
+      toggleTheme,
+      showToast,
     };
   },
 });

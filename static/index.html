@@ -4,10 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cyber-Lighthouse Dashboard</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>" />
+  
+  <!-- CDN Dependencies -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+  
   <link rel="stylesheet" href="/static/css/style.css" />
   <style>
     [v-cloak] { display: none; }
@@ -15,54 +22,174 @@
 </head>
 <body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 min-h-screen">
   <div id="app" v-cloak>
+    <!-- Toast Notifications -->
+    <div class="fixed top-20 right-4 z-50 space-y-2">
+      <transition-group name="toast">
+        <div v-for="toast in toastMessages" :key="toast.id"
+             :class="['px-4 py-3 rounded-lg shadow-lg text-white max-w-sm animate-slide-in-right',
+                      toast.type === 'error' ? 'bg-red-600' : 
+                      toast.type === 'success' ? 'bg-emerald-600' : 
+                      toast.type === 'warning' ? 'bg-yellow-600' : 'bg-blue-600']">
+          <div class="flex items-center gap-2">
+            <i :class="['fas', toast.type === 'error' ? 'fa-times-circle' : 
+                                        toast.type === 'success' ? 'fa-check-circle' : 
+                                        toast.type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle']"></i>
+            <span class="text-sm">{{ toast.message }}</span>
+          </div>
+        </div>
+      </transition-group>
+    </div>
+
     <!-- Navigation -->
-    <nav class="sticky top-0 z-50 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-700 backdrop-blur-md bg-opacity-90">
+    <nav class="sticky top-0 z-40 bg-gradient-to-r from-slate-950 to-slate-900 border-b border-slate-700 backdrop-blur-md bg-opacity-90">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
+          <!-- Logo -->
           <div class="flex items-center gap-3">
-            <div class="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-lg">
-              <i class="fas fa-lighthouse text-slate-900 text-lg"></i>
+            <button @click="showMobileMenu = !showMobileMenu" class="md:hidden text-slate-300 hover:text-white">
+              <i class="fas fa-bars text-xl"></i>
+            </button>
+            <div class="flex items-center gap-3">
+              <div class="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-yellow-400 to-yellow-500 rounded-lg">
+                <i class="fas fa-lighthouse text-slate-900 text-lg"></i>
+              </div>
+              <h1 class="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-500 bg-clip-text text-transparent hidden sm:block">
+                Cyber-Lighthouse
+              </h1>
             </div>
-            <h1 class="text-xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-500 bg-clip-text text-transparent">
-              Cyber-Lighthouse
-            </h1>
           </div>
 
-          <!-- Tabs -->
+          <!-- Desktop Tabs -->
           <div class="hidden md:flex items-center gap-1">
-            <button @click="currentTab = 'alerts'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'alerts' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
-              <i class="fas fa-bell"></i> Alerts
+            <button @click="currentTab = 'alerts'; clearNotificationBadge()" 
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 relative', 
+                             currentTab === 'alerts' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-bell"></i> 
+              <span>Alerts</span>
+              <span v-if="alertsCount > 0" class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ alertsCount }}</span>
             </button>
-            <button @click="currentTab = 'reports'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
-              <i class="fas fa-file-alt"></i> Reports
+            
+            <button @click="currentTab = 'reports'" 
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
+                             currentTab === 'reports' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-file-alt"></i> 
+              <span>Reports</span>
+              <span v-if="reportsCount > 0" class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ reportsCount }}</span>
             </button>
-            <button @click="currentTab = 'stats'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'stats' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+            
+            <button @click="currentTab = 'stats'" 
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
+                             currentTab === 'stats' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
               <i class="fas fa-chart-bar"></i> Stats
             </button>
-            <button @click="currentTab = 'articles'" :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', currentTab === 'articles' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+            
+            <button @click="currentTab = 'articles'" 
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
+                             currentTab === 'articles' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
               <i class="fas fa-archive"></i> History
+            </button>
+            
+            <button @click="currentTab = 'bookmarks'" 
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
+                             currentTab === 'bookmarks' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
+              <i class="fas fa-bookmark"></i>
+              <span v-if="bookmarksCount > 0" class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ bookmarksCount }}</span>
             </button>
           </div>
 
-          <!-- Refresh Button -->
-          <button @click="refreshData" :disabled="isLoading" class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
-            <i class="fas fa-sync-alt" :class="{ 'animate-spin': isLoading }"></i>
-            <span class="hidden sm:inline">Refresh</span>
-          </button>
+          <!-- Right Actions -->
+          <div class="flex items-center gap-2">
+            <!-- Last Refresh -->
+            <span v-if="lastRefreshTime" class="hidden lg:block text-xs text-slate-400">
+              <i class="fas fa-clock mr-1"></i>
+              {{ formatTimestamp(lastRefreshTime) }}
+            </span>
+
+            <!-- Export Button -->
+            <div class="relative">
+              <button @click="showExportMenu = !showExportMenu" 
+                      class="px-3 py-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-purple-500/20 text-sm">
+                <i class="fas fa-download mr-1"></i>
+                <span class="hidden sm:inline">Export</span>
+              </button>
+              <div v-if="showExportMenu" 
+                   class="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50">
+                <div class="py-2">
+                  <p class="px-4 py-1 text-xs text-slate-400 font-semibold">Export Alerts</p>
+                  <button @click="exportAlerts('markdown'); showExportMenu = false" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-file-markdown mr-2 text-red-400"></i>Markdown
+                  </button>
+                  <button @click="exportAlerts('csv'); showExportMenu = false" class="w-full text-left px-4 py-2 text-sm hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-file-csv mr-2 text-green-400"></i>CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Theme Toggle -->
+            <button @click="toggleTheme" 
+                    class="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-200">
+              <i :class="['fas', theme === 'dark' ? 'fa-sun' : 'fa-moon']"></i>
+            </button>
+
+            <!-- Refresh -->
+            <button @click="refreshData" :disabled="isLoading" 
+                    class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+              <i class="fas fa-sync-alt" :class="{ 'animate-spin': isLoading }"></i>
+              <span class="hidden sm:inline">Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mobile Menu -->
+        <div v-if="showMobileMenu" class="md:hidden pb-4 border-t border-slate-700 pt-4">
+          <div class="flex flex-col gap-2">
+            <button @click="currentTab = 'alerts'; showMobileMenu = false; clearNotificationBadge()" 
+                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'alerts' ? 'bg-blue-600' : 'hover:bg-slate-700']">
+              <i class="fas fa-bell mr-2"></i>Alerts
+            </button>
+            <button @click="currentTab = 'reports'; showMobileMenu = false" 
+                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'reports' ? 'bg-blue-600' : 'hover:bg-slate-700']">
+              <i class="fas fa-file-alt mr-2"></i>Reports
+            </button>
+            <button @click="currentTab = 'stats'; showMobileMenu = false" 
+                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'stats' ? 'bg-blue-600' : 'hover:bg-slate-700']">
+              <i class="fas fa-chart-bar mr-2"></i>Stats
+            </button>
+            <button @click="currentTab = 'articles'; showMobileMenu = false" 
+                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'articles' ? 'bg-blue-600' : 'hover:bg-slate-700']">
+              <i class="fas fa-archive mr-2"></i>History
+            </button>
+            <button @click="currentTab = 'bookmarks'; showMobileMenu = false" 
+                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'bookmarks' ? 'bg-blue-600' : 'hover:bg-slate-700']">
+              <i class="fas fa-bookmark mr-2"></i>Bookmarks
+            </button>
+          </div>
         </div>
       </div>
     </nav>
 
     <!-- Main Content -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <!-- Loading State -->
-      <div v-if="!statistics" class="flex items-center justify-center min-h-96">
-        <div class="text-center">
-          <div class="mb-4">
-            <i class="fas fa-spinner animate-spin text-5xl text-blue-400"></i>
+      <!-- Skeleton Loading -->
+      <div v-if="!statistics" class="space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div class="lg:col-span-1 space-y-6">
+            <div v-for="i in 4" :key="i" class="bg-slate-800 rounded-xl border border-slate-700 p-6 animate-pulse">
+              <div class="h-6 bg-slate-700 rounded mb-4 w-1/2"></div>
+              <div class="space-y-2">
+                <div v-for="j in 3" :key="j" class="h-4 bg-slate-700 rounded"></div>
+              </div>
+            </div>
           </div>
-          <p class="text-slate-300 text-xl">Loading Dashboard...</p>
-          <p class="text-slate-500 text-sm mt-2">Fetching articles and reports</p>
+          <div class="lg:col-span-3 space-y-4">
+            <div v-for="i in 3" :key="i" class="bg-slate-800 rounded-xl border border-slate-700 p-6 animate-pulse">
+              <div class="h-6 bg-slate-700 rounded mb-3 w-3/4"></div>
+              <div class="space-y-2">
+                <div v-for="j in 4" :key="j" class="h-4 bg-slate-700 rounded"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -72,7 +199,7 @@
         <div class="space-y-6">
           <!-- System Status -->
           <div v-if="systemStatus" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-            <h3 class="text-lg font-bold text-white mb-4">System Status</h3>
+            <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-server mr-2"></i>System Status</h3>
             <div class="space-y-2 text-sm">
               <div class="flex justify-between">
                 <span class="text-slate-400">Database:</span>
@@ -109,40 +236,106 @@
             </div>
           </div>
 
-          <!-- Filter Stats -->
-          <div v-if="filterStats" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-            <h3 class="text-lg font-bold text-white mb-4">Filter & Dedup</h3>
-            <div class="space-y-2 text-sm">
-              <div class="flex justify-between">
-                <span class="text-slate-400">Database:</span>
-                <span class="text-blue-300">{{ filterStats.total_articles_in_db }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Filtered:</span>
-                <span class="text-red-300">-{{ filterStats.filtered_out }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Duplicates:</span>
-                <span class="text-purple-300">-{{ filterStats.duplicates_grouped }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-400">Alerts:</span>
-                <span class="text-emerald-300">{{ filterStats.articles_after_dedup }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Trending Tags -->
-          <div v-if="Object.keys(trendingTags).length > 0" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-            <h3 class="text-lg font-bold text-white mb-4">Trending Tags</h3>
-            <div class="space-y-3">
-              <div v-for="(tag, index) in Object.keys(trendingTags).slice(0, 5)" :key="tag" class="flex items-center justify-between">
-                <span class="text-sm font-medium text-blue-300">{{ tag }}</span>
+          <!-- Trending Tags & Severity Distribution (Clickable) -->
+          <div v-if="Object.keys(trendingTags).length > 0 || alerts.length > 0" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+            <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-fire mr-2"></i>Trending Tags</h3>
+            
+            <!-- Tags Section -->
+            <div v-if="Object.keys(trendingTags).length > 0" class="space-y-3 mb-6">
+              <div v-for="(tagData, tag) in trendingTags" :key="tag"
+                   @click="filterByTag(tag)"
+                   class="flex items-center justify-between cursor-pointer hover:bg-slate-700/50 rounded-lg px-2 py-1 transition-colors">
+                <span class="text-sm font-medium text-blue-300 hover:text-blue-200">{{ tag }}</span>
                 <div class="flex items-center gap-2">
                   <div class="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500" :style="{ width: trendingTags[tag].percentage + '%' }"></div>
+                    <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500" :style="{ width: tagData.percentage + '%' }"></div>
                   </div>
-                  <span class="text-xs text-slate-400 w-8 text-right">{{ trendingTags[tag].count }}</span>
+                  <span class="text-xs text-slate-400 w-8 text-right">{{ tagData.count }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-center py-4 mb-6">
+              <p class="text-slate-500 text-sm">No tags extracted yet</p>
+              <p class="text-slate-600 text-xs mt-1">Tags are being extracted asynchronously</p>
+            </div>
+
+            <!-- Severity Distribution Section -->
+            <div v-if="alerts.length > 0">
+              <div class="border-t border-slate-700 pt-4">
+                <h4 class="text-sm font-semibold text-slate-300 mb-3">
+                  <i class="fas fa-chart-pie mr-2"></i>Severity Distribution
+                </h4>
+                <div class="space-y-2">
+                  <!-- Critical -->
+                  <div @click="filterBySeverity('critical')" class="flex items-center justify-between cursor-pointer hover:bg-slate-700/50 rounded px-2 py-1 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-radiation text-red-400 text-xs"></i>
+                      <span class="text-sm text-slate-300 hover:text-white">Critical</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-red-500 to-red-400" 
+                             :style="{ width: getSeverityPercentage('critical') + '%' }"></div>
+                      </div>
+                      <span class="text-xs font-semibold text-red-300 w-6 text-right">{{ getSeverityCount('critical') }}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- High -->
+                  <div @click="filterBySeverity('high')" class="flex items-center justify-between cursor-pointer hover:bg-slate-700/50 rounded px-2 py-1 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-exclamation-triangle text-orange-400 text-xs"></i>
+                      <span class="text-sm text-slate-300 hover:text-white">High</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-orange-500 to-orange-400" 
+                             :style="{ width: getSeverityPercentage('high') + '%' }"></div>
+                      </div>
+                      <span class="text-xs font-semibold text-orange-300 w-6 text-right">{{ getSeverityCount('high') }}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Medium -->
+                  <div @click="filterBySeverity('medium')" class="flex items-center justify-between cursor-pointer hover:bg-slate-700/50 rounded px-2 py-1 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-exclamation-circle text-yellow-400 text-xs"></i>
+                      <span class="text-sm text-slate-300 hover:text-white">Medium</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-yellow-500 to-yellow-400" 
+                             :style="{ width: getSeverityPercentage('medium') + '%' }"></div>
+                      </div>
+                      <span class="text-xs font-semibold text-yellow-300 w-6 text-right">{{ getSeverityCount('medium') }}</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Low -->
+                  <div @click="filterBySeverity('low')" class="flex items-center justify-between cursor-pointer hover:bg-slate-700/50 rounded px-2 py-1 transition-colors">
+                    <div class="flex items-center gap-2">
+                      <i class="fas fa-info-circle text-green-400 text-xs"></i>
+                      <span class="text-sm text-slate-300 hover:text-white">Low</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <div class="w-20 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full bg-gradient-to-r from-green-500 to-green-400" 
+                             :style="{ width: getSeverityPercentage('low') + '%' }"></div>
+                      </div>
+                      <span class="text-xs font-semibold text-green-300 w-6 text-right">{{ getSeverityCount('low') }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Severity Trend Indicator -->
+                <div class="mt-4 pt-3 border-t border-slate-700">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-400">Threat Level:</span>
+                    <span :class="['font-bold', getThreatLevelColor()]">
+                      <i :class="['fas mr-1', getThreatLevelIcon()]"></i>
+                      {{ getThreatLevel() }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -151,64 +344,267 @@
 
         <!-- Main Content Area -->
         <div class="lg:col-span-3 space-y-6">
-          <!-- Alerts Panel -->
+          <!-- ALERTS TAB -->
           <div v-show="currentTab === 'alerts'" class="space-y-4">
-            <h2 class="text-2xl font-bold text-white mb-4">Latest Alerts</h2>
-            <div v-if="alerts.length === 0" class="text-center py-8 text-slate-400">
-              <i class="fas fa-bell text-4xl mb-2"></i>
-              <p>No alerts</p>
-            </div>
-            <div v-for="alert in alerts" :key="alert.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-red-500/30 shadow-lg hover:shadow-2xl hover:border-red-500/50 transition-all duration-200 p-6">
-              <div class="flex justify-between items-start mb-3">
-                <h3 class="text-lg font-bold text-white flex-1">{{ alert.title }}</h3>
-                <div class="flex flex-wrap gap-2 justify-end">
-                  <span v-if="alert.multiSource" class="text-xs font-medium bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full">
-                    {{ alert.sourceLinks.length }} sources
-                  </span>
-                  <span v-else class="text-xs font-medium bg-red-500/20 text-red-300 px-3 py-1 rounded-full">{{ alert.source }}</span>
-                </div>
-              </div>
+            <h2 class="text-2xl font-bold text-white">
+              <i class="fas fa-bell mr-2"></i>Latest Alerts
+            </h2>
 
-              <!-- Tags -->
-              <div v-if="alert.tags && alert.tags.length > 0" class="flex flex-wrap gap-2 mb-4">
-                <span v-for="tag in alert.tags" :key="tag" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  {{ tag }}
+            <!-- Severity Filter Chips -->
+            <div class="bg-slate-800/50 rounded-xl border border-slate-700 p-4">
+              <div class="flex items-center gap-2 mb-3">
+                <i class="fas fa-filter text-slate-400"></i>
+                <span class="text-sm font-semibold text-slate-300">Filter by Severity:</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button @click="filterSeverity = ''"
+                        :class="['px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2',
+                                 !filterSeverity ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+                  <i class="fas fa-layer-group"></i>
+                  All
+                  <span class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ alerts.length }}</span>
+                </button>
+                <button @click="filterSeverity = 'critical'"
+                        :class="['px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2',
+                                 filterSeverity === 'critical' ? 'bg-red-600 text-white shadow-lg shadow-red-500/30' : 'bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30']">
+                  <i class="fas fa-radiation"></i>
+                  Critical
+                  <span class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ getFilteredCount('critical') }}</span>
+                </button>
+                <button @click="filterSeverity = 'high'"
+                        :class="['px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2',
+                                 filterSeverity === 'high' ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/30' : 'bg-orange-500/20 text-orange-300 hover:bg-orange-500/30 border border-orange-500/30']">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  High
+                  <span class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ getFilteredCount('high') }}</span>
+                </button>
+                <button @click="filterSeverity = 'medium'"
+                        :class="['px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2',
+                                 filterSeverity === 'medium' ? 'bg-yellow-600 text-white shadow-lg shadow-yellow-500/30' : 'bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/30']">
+                  <i class="fas fa-exclamation-circle"></i>
+                  Medium
+                  <span class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ getFilteredCount('medium') }}</span>
+                </button>
+                <button @click="filterSeverity = 'low'"
+                        :class="['px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2',
+                                 filterSeverity === 'low' ? 'bg-green-600 text-white shadow-lg shadow-green-500/30' : 'bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/30']">
+                  <i class="fas fa-info-circle"></i>
+                  Low
+                  <span class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ getFilteredCount('low') }}</span>
+                </button>
+              </div>
+              <div v-if="filterSeverity" class="mt-3 flex items-center gap-2 text-sm">
+                <span :class="['px-2 py-1 rounded-full text-xs font-semibold',
+                               'bg-' + getSeverityColor(filterSeverity) + '-500/20',
+                               'text-' + getSeverityColor(filterSeverity) + '-300']">
+                  <i :class="['fas', getSeverityIcon(filterSeverity), 'mr-1']"></i>
+                  {{ filterSeverity.toUpperCase() }}
                 </span>
+                <span class="text-slate-400">filter active</span>
+                <button @click="filterSeverity = ''" class="text-red-400 hover:text-red-300 ml-2">
+                  <i class="fas fa-times mr-1"></i>Clear filter
+                </button>
               </div>
+            </div>
 
-              <div v-if="alert.analysis" class="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-4 markdown-content text-slate-300 text-sm" v-html="renderMarkdown(alert.analysis)"></div>
-              <div class="space-y-2 mb-4">
-                <div v-for="(src, idx) in alert.sourceLinks" :key="idx" class="flex items-center gap-2 text-sm">
-                  <span class="text-slate-400">{{ src.source }}:</span>
-                  <a :href="src.link" target="_blank" class="text-blue-400 hover:text-blue-300 truncate">{{ src.link }}</a>
+            <div v-if="filteredAlerts.length === 0" class="text-center py-16 bg-slate-800/50 rounded-xl border border-slate-700">
+              <i class="fas fa-bell text-6xl mb-4 text-slate-600"></i>
+              <p class="text-slate-400 text-lg mb-2">No alerts match the filter</p>
+              <p class="text-slate-500 text-sm">Try adjusting the severity filter</p>
+            </div>
+
+            <div v-for="(alert, index) in filteredAlerts" :key="`alert-${alert.id}-${index}`"
+                 :class="['rounded-xl border shadow-lg transition-all duration-300',
+                          'bg-gradient-to-br from-slate-800 to-slate-900',
+                          alert.severity === 'critical' ? 'border-red-500/50 hover:border-red-500/70 hover:shadow-2xl' :
+                          alert.severity === 'high' ? 'border-orange-500/40 hover:border-orange-500/60 hover:shadow-2xl' :
+                          alert.severity === 'medium' ? 'border-yellow-500/30 hover:border-yellow-500/50 hover:shadow-2xl' :
+                          'border-slate-700/50 hover:border-slate-600 hover:shadow-2xl']">
+              
+              <!-- Alert Header with Severity Badge -->
+              <div class="p-6 pb-4">
+                <div class="flex justify-between items-start mb-3">
+                  <div class="flex-1 pr-4">
+                    <h3 class="text-lg font-bold text-white leading-tight mb-2">{{ alert.title }}</h3>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <!-- Severity Badge -->
+                      <span :class="['inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide',
+                                     'bg-' + getSeverityColor(alert.severity) + '-500/20',
+                                     'text-' + getSeverityColor(alert.severity) + '-300',
+                                     'border border-' + getSeverityColor(alert.severity) + '-500/30']">
+                        <i :class="['fas', getSeverityIcon(alert.severity)]"></i>
+                        {{ alert.severity }}
+                      </span>
+                      
+                      <!-- Multi-Source Badge -->
+                      <span v-if="alert.multiSource" class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        <i class="fas fa-layer-group"></i>
+                        {{ alert.sourceLinks.length }} sources
+                      </span>
+                      
+                      <!-- Date -->
+                      <span class="inline-flex items-center gap-1 text-xs text-slate-400">
+                        <i class="fas fa-calendar-alt"></i>
+                        {{ alert.date }}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <!-- Bookmark Button -->
+                  <button @click="toggleBookmark(alert)"
+                          :class="['p-2 rounded-lg transition-all duration-200 flex-shrink-0',
+                                   isBookmarked(alert.id) ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30' : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-yellow-400']"
+                          :title="isBookmarked(alert.id) ? 'Remove bookmark' : 'Add bookmark'">
+                    <i :class="['fas fa-bookmark', isBookmarked(alert.id) ? 'fas' : 'far']"></i>
+                  </button>
+                </div>
+
+                <!-- Tags Section -->
+                <div v-if="alert.tags && alert.tags.length > 0" class="flex flex-wrap gap-2 mb-4 pt-2">
+                  <span v-for="tag in alert.tags.slice(0, 8)" :key="tag"
+                        @click="filterByTag(tag)"
+                        class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/15 text-blue-300 border border-blue-500/25 cursor-pointer hover:bg-blue-500/25 hover:text-blue-200 transition-all duration-200">
+                    <i class="fas fa-tag mr-1 text-[10px]"></i>
+                    {{ tag }}
+                  </span>
                 </div>
               </div>
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-slate-500">{{ alert.date }}</span>
-                <a :href="alert.sourceLinks[0].link" target="_blank" class="text-blue-400 hover:text-blue-300">Read More →</a>
+
+              <!-- Analysis Section (Alert & Impact) -->
+              <div v-if="alert.analysis" class="mx-6 mb-4 p-4 bg-slate-900/50 border border-slate-700/50 rounded-lg">
+                <div class="markdown-content text-slate-300 text-sm" v-html="renderAlertAnalysis(alert.analysis)"></div>
+              </div>
+
+              <!-- Source Links Section -->
+              <div v-if="alert.sourceLinks && alert.sourceLinks.length > 0" class="px-6 pb-4">
+                <div class="flex items-center gap-2 mb-2 text-xs text-slate-400">
+                  <i class="fas fa-link"></i>
+                  <span class="font-semibold">Sources:</span>
+                </div>
+                <div class="space-y-1">
+                  <div v-for="(src, idx) in alert.sourceLinks" :key="idx" class="flex items-center gap-2 text-sm">
+                    <span class="text-slate-400 text-xs font-medium">{{ src.source }}:</span>
+                    <a :href="src.link" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 truncate hover:underline">
+                      {{ src.link }}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div v-if="alertsTotalCount > 0" class="mt-8 flex flex-col md:flex-row items-center justify-between gap-4 px-6 py-4 bg-slate-800/50 rounded-xl border border-slate-700">
+              <!-- Pagination Info -->
+              <div class="text-sm text-slate-400">
+                Showing <span class="font-semibold text-slate-200">{{ alertsPageStart }}</span> to <span class="font-semibold text-slate-200">{{ alertsPageEnd }}</span> of <span class="font-semibold text-slate-200">{{ alertsTotalCount }}</span> alerts
+              </div>
+
+              <!-- Page Navigation -->
+              <div class="flex items-center gap-2">
+                <!-- Previous Button -->
+                <button @click="changeAlertsPage(alertsPage - 1)"
+                        :disabled="alertsPage === 1 || isLoading"
+                        class="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1"
+                        :class="alertsPage === 1 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                  <i class="fas fa-chevron-left"></i>
+                  <span class="hidden sm:inline">Previous</span>
+                </button>
+
+                <!-- Page Numbers -->
+                <div class="flex items-center gap-1">
+                  <template v-for="page in Math.min(5, alertsTotalPages)">
+                    <button v-if="page <= alertsTotalPages"
+                            @click="changeAlertsPage(page)"
+                            :disabled="isLoading"
+                            :class="['px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                                     page === alertsPage ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+                      {{ page }}
+                    </button>
+                  </template>
+                  <span v-if="alertsTotalPages > 5" class="text-slate-400 px-2">...</span>
+                  <button v-if="alertsTotalPages > 5"
+                          @click="changeAlertsPage(alertsTotalPages)"
+                          :disabled="isLoading || alertsPage === alertsTotalPages"
+                          :class="['px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                                   alertsPage === alertsTotalPages ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+                    {{ alertsTotalPages }}
+                  </button>
+                </div>
+
+                <!-- Next Button -->
+                <button @click="changeAlertsPage(alertsPage + 1)"
+                        :disabled="alertsPage === alertsTotalPages || isLoading"
+                        class="px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1"
+                        :class="alertsPage === alertsTotalPages ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'">
+                  <span class="hidden sm:inline">Next</span>
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
+
+              <!-- Page Size Selector -->
+              <div class="flex items-center gap-2">
+                <label for="page-size" class="text-sm text-slate-400">Per page:</label>
+                <select v-model.number="alertsLimit" @change="alertsPage = 1; refreshData()"
+                        id="page-size"
+                        class="px-3 py-2 rounded-lg bg-slate-700 text-slate-300 border border-slate-600 text-sm focus:outline-none focus:border-blue-500">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
               </div>
             </div>
           </div>
 
-          <!-- Reports Panel -->
+          <!-- REPORTS TAB -->
           <div v-show="currentTab === 'reports'" class="space-y-4">
-            <h2 class="text-2xl font-bold text-white mb-4">Synthesis Reports</h2>
-            <div v-if="reports.length === 0" class="text-center py-8 text-slate-400">
-              <i class="fas fa-file-alt text-4xl mb-2"></i>
-              <p>No reports</p>
+            <h2 class="text-2xl font-bold text-white">
+              <i class="fas fa-file-alt mr-2"></i>Synthesis Reports
+            </h2>
+            
+            <div v-if="reports.length === 0" class="text-center py-16 bg-slate-800/50 rounded-xl border border-slate-700">
+              <i class="fas fa-file-alt text-6xl mb-4 text-slate-600"></i>
+              <p class="text-slate-400 text-lg mb-2">No reports available</p>
+              <p class="text-slate-500 text-sm">Reports generate daily via daily_summary.py</p>
             </div>
-            <div v-for="report in reports" :key="report.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
-              <div class="flex justify-between items-center mb-4 pb-4 border-b border-slate-700">
-                <h4 class="text-lg font-bold text-white">{{ report.generated_date }}</h4>
-                <span class="text-sm text-slate-400">{{ report.articles_count }} articles</span>
+            
+            <div v-for="(report, index) in reports" :key="index" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg">
+              <!-- Report Header -->
+              <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                  <div>
+                    <h4 class="text-lg font-bold text-white">{{ report.generated_date }}</h4>
+                    <p class="text-sm text-slate-400">{{ report.articles_count }} articles analyzed</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button @click="exportReport(index, 'markdown')" 
+                            class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
+                            title="Download Markdown">
+                      <i class="fas fa-download mr-1"></i>Download MD
+                    </button>
+                    <button @click="toggleReportExpand(index)" class="text-slate-400 hover:text-white transition-colors">
+                      <i :class="['fas', isReportExpanded(index) ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="markdown-content max-h-96 overflow-y-auto text-slate-300 text-sm" v-html="renderMarkdown(report.report_content)"></div>
+
+              <!-- Expandable Report Content -->
+              <div v-if="isReportExpanded(index)" class="px-6 pb-6 border-t border-slate-700 pt-4">
+                <div class="bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-600/50 shadow-2xl overflow-hidden">
+                  <div class="max-h-[900px] overflow-y-auto p-8">
+                    <div class="report-content" v-html="renderReport(report.report_content)"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Statistics Panel -->
+          <!-- STATS TAB -->
           <div v-show="currentTab === 'stats'" class="space-y-6">
-            <h2 class="text-2xl font-bold text-white mb-4">Statistics</h2>
+            <h2 class="text-2xl font-bold text-white">
+              <i class="fas fa-chart-bar mr-2"></i>Statistics
+            </h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
                 <h3 class="text-lg font-bold text-white mb-4">Articles by Source</h3>
@@ -229,27 +625,78 @@
                 <p class="text-4xl font-bold text-emerald-300">{{ statistics.processed_articles }}</p>
               </div>
               <div class="bg-yellow-600/20 border border-yellow-500/30 rounded-xl p-6">
-                <p class="text-sm text-yellow-300 uppercase tracking-wide mb-2">Hit Rate</p>
+                <p class="text-sm text-yellow-300 uppercase tracking-wide mb-2">Cache Hit Rate</p>
                 <p class="text-4xl font-bold text-yellow-300">{{ statistics.cache_hit_rate.toFixed(1) }}%</p>
               </div>
             </div>
           </div>
 
-          <!-- History Panel -->
+          <!-- HISTORY TAB -->
           <div v-show="currentTab === 'articles'" class="space-y-4">
-            <h2 class="text-2xl font-bold text-white mb-4">Articles History</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <input v-model="searchQuery" type="text" placeholder="Search articles..." class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors" />
-              <select v-model="filterSource" class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors">
-                <option value="">All Sources</option>
-                <option v-for="source in uniqueSources" :key="source" :value="source">{{ source }}</option>
-              </select>
+            <h2 class="text-2xl font-bold text-white">
+              <i class="fas fa-archive mr-2"></i>Articles History
+            </h2>
+            
+            <!-- Filters -->
+            <div class="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input v-model="searchQuery" @change="applyHistoryFilters()"
+                       type="text" placeholder="🔍 Search articles..." 
+                       class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors" />
+                <select v-model="filterSource" @change="applyHistoryFilters()"
+                        class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors">
+                  <option value="">All Sources</option>
+                  <option v-for="source in uniqueSources" :key="source" :value="source">{{ source }}</option>
+                </select>
+              </div>
+              
+              <!-- Source Filter Chips -->
+              <div class="flex flex-wrap gap-2">
+                <button @click="filterSource = ''; applyHistoryFilters()"
+                        :class="['px-3 py-1 rounded-full text-sm transition-colors',
+                                 !filterSource ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+                  All
+                </button>
+                <button v-for="source in uniqueSources.slice(0, 8)" :key="source"
+                        @click="filterSource = filterSource === source ? '' : source; applyHistoryFilters()"
+                        :class="['px-3 py-1 rounded-full text-sm transition-colors',
+                                 filterSource === source ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+                  {{ source }}
+                </button>
+              </div>
+
+              <!-- Date Range Picker -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm text-slate-400 mb-1">From Date</label>
+                  <input v-model="historyDateFrom" type="date" @change="applyHistoryFilters()"
+                         class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-sm text-slate-400 mb-1">To Date</label>
+                  <input v-model="historyDateTo" type="date" @change="applyHistoryFilters()"
+                         class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+              
+              <p v-if="filterTag" class="text-sm text-blue-300">
+                <i class="fas fa-tag mr-1"></i>
+                Filtered by tag: <strong>{{ filterTag }}</strong>
+                <button @click="filterTag = ''" class="ml-2 text-red-400 hover:text-red-300">
+                  <i class="fas fa-times"></i> Clear
+                </button>
+              </p>
             </div>
-            <div v-if="filteredArticles.length === 0" class="text-center py-8 text-slate-400">
-              <i class="fas fa-search text-4xl mb-2"></i>
-              <p>No articles found</p>
+
+            <!-- Articles List -->
+            <div v-if="paginatedHistory.length === 0" class="text-center py-16 bg-slate-800/50 rounded-xl border border-slate-700">
+              <i class="fas fa-search text-6xl mb-4 text-slate-600"></i>
+              <p class="text-slate-400 text-lg mb-2">No articles found</p>
+              <p class="text-slate-500 text-sm">Try adjusting your search or filters</p>
             </div>
-            <div v-for="article in filteredArticles" :key="article.id" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg hover:shadow-2xl hover:border-purple-500/50 transition-all duration-200 p-6">
+            
+            <div v-for="article in paginatedHistory" :key="article.id" 
+                 class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg hover:shadow-2xl hover:border-purple-500/50 transition-all duration-200 p-6">
               <div class="flex justify-between items-start mb-3">
                 <h4 class="text-lg font-bold text-white flex-1">{{ article.title }}</h4>
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap ml-4">{{ article.source }}</span>
@@ -257,8 +704,61 @@
               <p class="text-slate-300 text-sm mb-4">{{ article.content.substring(0, 200) }}...</p>
               <div class="flex justify-between items-center">
                 <span class="text-xs text-slate-500">{{ article.date }}</span>
-                <a :href="article.link" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg transition-all duration-200 text-sm">
+                <a :href="article.link" target="_blank" 
+                   class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-lg transition-all duration-200 text-sm">
                   <i class="fas fa-external-link-alt"></i> View
+                </a>
+              </div>
+            </div>
+
+            <!-- Pagination -->
+            <div v-if="totalHistoryPages > 1" class="flex justify-center items-center gap-2 py-4">
+              <button @click="changeHistoryPage(historyPage - 1)" :disabled="historyPage === 1"
+                      class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-chevron-left"></i>
+              </button>
+              <span class="text-slate-300">Page {{ historyPage }} of {{ totalHistoryPages }}</span>
+              <button @click="changeHistoryPage(historyPage + 1)" :disabled="historyPage === totalHistoryPages"
+                      class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- BOOKMARKS TAB -->
+          <div v-show="currentTab === 'bookmarks'" class="space-y-4">
+            <h2 class="text-2xl font-bold text-white">
+              <i class="fas fa-bookmark mr-2"></i>Bookmarked Alerts
+            </h2>
+            
+            <div v-if="bookmarks.length === 0" class="text-center py-16 bg-slate-800/50 rounded-xl border border-slate-700">
+              <i class="fas fa-bookmark text-6xl mb-4 text-slate-600"></i>
+              <p class="text-slate-400 text-lg mb-2">No bookmarks yet</p>
+              <p class="text-slate-500 text-sm">Bookmark important alerts from the Alerts tab</p>
+            </div>
+            
+            <div v-for="bookmark in bookmarks" :key="bookmark.id" 
+                 class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-yellow-500/30 shadow-lg hover:shadow-2xl hover:border-yellow-500/50 transition-all duration-200 p-6">
+              <div class="flex justify-between items-start mb-3">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-2">
+                    <i :class="['fas', getSeverityIcon(bookmark.severity), 'text-' + getSeverityColor(bookmark.severity) + '-400']"></i>
+                    <span :class="['px-2 py-1 rounded-full text-xs font-semibold',
+                                   'bg-' + getSeverityColor(bookmark.severity) + '-500/20',
+                                   'text-' + getSeverityColor(bookmark.severity) + '-300']">
+                      {{ bookmark.severity.toUpperCase() }}
+                    </span>
+                  </div>
+                  <h3 class="text-lg font-bold text-white">{{ bookmark.title }}</h3>
+                </div>
+                <button @click="toggleBookmark(bookmark)" class="text-yellow-400 hover:text-yellow-300">
+                  <i class="fas fa-bookmark text-xl"></i>
+                </button>
+              </div>
+              <div class="flex justify-between items-center text-sm">
+                <span class="text-slate-500">{{ bookmark.source }} • {{ bookmark.date }}</span>
+                <a :href="bookmark.link" target="_blank" class="text-blue-400 hover:text-blue-300">
+                  <i class="fas fa-external-link-alt mr-1"></i>View Source
                 </a>
               </div>
             </div>
@@ -266,15 +766,53 @@
         </div>
       </div>
     </div>
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div v-if="showShortcutsModal" @click.self="showShortcutsModal = false"
+         class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-2xl max-w-md w-full p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-xl font-bold text-white">
+            <i class="fas fa-keyboard mr-2"></i>Keyboard Shortcuts
+          </h3>
+          <button @click="showShortcutsModal = false" class="text-slate-400 hover:text-white">
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-300">Switch to tab</span>
+            <div class="flex gap-1">
+              <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">1</kbd>
+              <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">2</kbd>
+              <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">3</kbd>
+              <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">4</kbd>
+            </div>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-300">Refresh data</span>
+            <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">R</kbd>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-300">Focus search</span>
+            <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">/</kbd>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-300">Show shortcuts</span>
+            <kbd class="px-2 py-1 bg-slate-700 rounded text-sm">?</kbd>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer hint -->
+    <div class="text-center py-4 text-slate-500 text-sm no-print">
+      Press <kbd class="px-2 py-1 bg-slate-700 rounded text-xs">?</kbd> for keyboard shortcuts
+    </div>
   </div>
 
-  <!-- Vue.js 3 Production -->
-  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
-
-  <!-- API Client -->
+  <!-- Vue App Scripts -->
   <script src="/static/js/api.js"></script>
-
-  <!-- Vue App -->
   <script src="/static/js/app.js"></script>
 </body>
 </html>
