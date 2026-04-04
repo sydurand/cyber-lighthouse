@@ -97,8 +97,13 @@ async def get_alerts(
             # Double-checking here is unnecessary and causes API calls
             # Articles in the database should already be security-relevant
 
-            # Try to get analysis from cache
-            analysis = cache.get_analysis(title, content)
+            # Try to get analysis from database first, then from cache
+            display_analysis = article.get("analysis", "")
+            if not display_analysis:
+                display_analysis = cache.get_analysis(title, content)
+
+            if not display_analysis:
+                display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
             # Try to get tags from cache
             tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
@@ -109,14 +114,9 @@ async def get_alerts(
                 articles_needing_tags.append({
                     "id": article.get("id", 0),
                     "title": title,
-                    "analysis": analysis if analysis else ""
+                    "analysis": display_analysis if display_analysis else ""
                 })
                 tags = []  # Use empty tags for now
-
-            # Use analysis from database if available, otherwise use cache
-            display_analysis = analysis or article.get("analysis", "")
-            if not display_analysis:
-                display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
             alert = AlertResponse(
                 id=article.get("id", 0),
