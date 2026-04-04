@@ -10,8 +10,6 @@ import hashlib
 from database import Database
 from cache import get_cache
 from optimization import get_call_counter
-from task_queue import get_task_queue, submit_task
-from ai_tasks import process_article_batch
 from logging_config import logger
 from utils import (
     detect_similar_articles,
@@ -86,7 +84,6 @@ async def get_alerts(
         # Build alert objects with analysis, filtering out non-relevant content
         all_alerts = []
         filtered_count = 0
-        articles_needing_tags = []  # Queue for async tag extraction
         from utils import _tag_cache
 
         for article in articles_sorted:
@@ -105,18 +102,17 @@ async def get_alerts(
             if not display_analysis:
                 display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
-            # Try to get tags from cache
+            # Try to get tags from cache first
             tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
             tags = _tag_cache.get(tags_cache_key, None)
 
-            # If tags not in cache, queue for async extraction
+            # If not in cache, use fast keyword-based extraction as fallback
             if tags is None:
-                articles_needing_tags.append({
-                    "id": article.get("id", 0),
-                    "title": title,
-                    "analysis": display_analysis if display_analysis else ""
-                })
-                tags = []  # Use empty tags for now
+                from utils import _extract_tags_from_keywords_dynamic
+                tags = _extract_tags_from_keywords_dynamic(title, display_analysis)
+                # Cache the keyword-extracted tags for future requests
+                if tags:
+                    _tag_cache[tags_cache_key] = tags
 
             alert = AlertResponse(
                 id=article.get("id", 0),
@@ -129,16 +125,6 @@ async def get_alerts(
                 severity=detect_severity(title, display_analysis or "", tags),
             )
             all_alerts.append(alert)
-
-        # Submit batch for async processing if needed
-        if articles_needing_tags:
-            batch_id = hashlib.md5(str(articles_needing_tags).encode()).hexdigest()[:8]
-            submit_task(
-                f"process_batch_{batch_id}",
-                process_article_batch,
-                args=(articles_needing_tags,)
-            )
-            logger.debug(f"Batch {batch_id} enqueued ({len(articles_needing_tags)} articles)")
 
         # Track deduplication stats
         dedup_count = 0

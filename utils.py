@@ -10,6 +10,25 @@ _relevance_cache = {}
 _tag_cache = {}
 _dedup_cache = {}
 
+# Load tag cache from file if exists
+def _load_tag_cache():
+    """Load tag cache from file."""
+    global _tag_cache
+    try:
+        import json
+        from pathlib import Path
+        cache_file = Path("cache/tag_cache.json")
+        if cache_file.exists():
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                _tag_cache = json.load(f)
+            logger.debug(f"Loaded tag cache with {len(_tag_cache)} entries")
+    except Exception as e:
+        logger.warning(f"Failed to load tag cache: {e}")
+        _tag_cache = {}
+
+# Load tag cache on module import
+_load_tag_cache()
+
 
 def retry_with_backoff(func):
     """
@@ -59,6 +78,63 @@ def validate_rss_article(article) -> bool:
             logger.debug(f"Invalid article: missing {field}")
             return False
     return True
+
+
+def is_podcast_article(article) -> bool:
+    """
+    Detect if an RSS article is a podcast announcement or episode.
+    
+    These are not actionable threat intelligence and should be excluded early
+    to save AI tokens and keep alerts relevant.
+    
+    Returns:
+        True if article appears to be a podcast episode/announcement
+    """
+    title = getattr(article, 'title', '').lower()
+    summary = getattr(article, 'summary', '').lower()
+    description = getattr(article, 'description', '').lower()
+    
+    # Combine all text for checking
+    text = f"{title} {summary} {description}"
+    
+    # Podcast indicators (case-insensitive)
+    podcast_keywords = [
+        'stormcast',
+        'podcast',
+        'episode ',
+        'isc stormcast',
+        'sans podcast',
+        'darknet dialogues',
+        'cyberwire',
+        'rss feed',
+        'itunes.apple.com',
+        'spotify.com',
+        'stitcher.com',
+        'player.fm',
+        'overcast.fm',
+        'pocketcasts.com',
+        'castbox.fm',
+        'anchor.fm',
+        'podbean.com',
+        'buzzsprout.com',
+        'libsyn.com',
+        'blubrry.com',
+        'audio boom',
+        'soundcloud.com',
+        'listen on',
+        'subscribe to',
+        'listen to this episode',
+        'this week in',
+        'twit security',
+    ]
+    
+    # Check if any podcast keyword is present
+    is_podcast = any(kw in text for kw in podcast_keywords)
+    
+    if is_podcast:
+        logger.debug(f"Podcast article detected, skipping: {getattr(article, 'title', '')[:60]}...")
+    
+    return is_podcast
 
 
 def extract_article_content(article) -> str:
@@ -253,8 +329,9 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
     """
     Extract security tags from article title and analysis using AI.
 
-    Returns list of relevant security tags (e.g., #CVE-2026-1234, #Ransomware, #Patch)
-    Uses cache-first approach and keyword fallback to minimize API calls.
+    Uses AI-first approach for dynamic, intelligent tag extraction.
+    Tags focus on: CVE IDs, threat types, attacker groups, vulnerabilities.
+    Falls back to keyword extraction only if AI is unavailable.
     """
     if not title or not analysis:
         return []
@@ -265,13 +342,7 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
         logger.debug(f"Tag cache hit for: {title[:50]}...")
         return _tag_cache[cache_key]
 
-    # Try fallback keyword extraction first (no API call needed)
-    fallback_tags = _extract_tags_from_keywords(title, analysis)
-    if fallback_tags:
-        _tag_cache[cache_key] = fallback_tags
-        return fallback_tags
-
-    # Only call AI if no keywords found (expensive operation)
+    # Try AI extraction first (dynamic, intelligent)
     try:
         from config import Config
         from ai_client import get_ai_client
@@ -281,87 +352,154 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
         call_counter = get_call_counter()
         if not call_counter.can_make_call():
             logger.warning(f"Rate limit approaching, using keyword fallback for tags")
+            fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
+            _tag_cache[cache_key] = fallback_tags
             return fallback_tags
 
         ai_client = get_ai_client()
 
-        prompt = f"""Article: {title}
+        prompt = f"""Article Title: {title}
 
-Analysis: {analysis[:300]}
+Analysis: {analysis[:500]}
 
-Extract 2-3 security tags. Format: #TagName (no spaces, PascalCase)
-Return ONLY tags, one per line."""
+Extract 2-4 security tags from this article. Focus on:
+- CVE identifiers (e.g., #CVE-2026-1234)
+- Threat types (e.g., #Ransomware, #DataBreach, #Phishing, #ZeroDay)
+- Attacker groups or APTs (e.g., #TeamPCP, #Lazarus, #APT29)
+- Specific vulnerabilities or attack vectors
 
-        instruction = """Extract concise security tags: CVE numbers, threat types, or attack vectors."""
+Format: #TagName (no spaces, use PascalCase or exact CVE format)
+Return ONLY the tags, one per line, nothing else."""
+
+        instruction = """You are a cybersecurity analyst. Extract concise, relevant security tags from threat intelligence articles. Focus on CVEs, threat types, attacker groups, and key vulnerabilities. Return only tags in #TagName format, one per line."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
             prompt=prompt,
             system_instruction=instruction,
-            temperature=0.0,
+            temperature=0.1,
             timeout=30
         )
 
         call_counter.add_call()
 
-        # Parse tags from response
+        # Parse tags from AI response
         tags = []
         for line in response_text.strip().split('\n'):
             tag = line.strip()
+            # Remove bullet points or numbers if present
+            tag = tag.lstrip('-•*').strip()
             if tag.startswith('#'):
                 tags.append(tag)
-            elif tag and not tag.startswith('-'):
+            elif tag and len(tag) > 2:
                 tags.append(f"#{tag}")
 
-        tags = tags[:3]  # Limit to 3 tags
+        # Clean up and limit tags
+        tags = list(dict.fromkeys(tags))[:4]  # Remove duplicates, limit to 4
 
-        # Cache the result
-        _tag_cache[cache_key] = tags
+        if tags:
+            # Cache the AI result
+            _tag_cache[cache_key] = tags
+            logger.debug(f"AI extracted tags: {tags}")
+            return tags
 
-        logger.debug(f"Extracted tags: {tags}")
-        return tags
+        # If AI returned no valid tags, use keyword fallback
+        logger.debug(f"AI returned no valid tags, using keyword fallback")
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
+        _tag_cache[cache_key] = fallback_tags
+        return fallback_tags
 
     except Exception as e:
-        logger.debug(f"Tag extraction failed (falling back to keywords): {e}")
+        logger.debug(f"AI tag extraction failed (falling back to keywords): {e}")
         # Use keyword fallback if AI fails
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
         _tag_cache[cache_key] = fallback_tags
         return fallback_tags
 
 
-def _extract_tags_from_keywords(title: str, analysis: str) -> list:
+def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
     """
-    Fast keyword-based tag extraction (no API calls).
+    Dynamic keyword-based tag extraction (fallback only, no AI calls).
 
+    This is used only when AI is unavailable or rate-limited.
     Returns list of tags based on keyword matching in title and analysis.
     """
+    import re
     text = f"{title} {analysis}".lower()
     tags = []
 
-    # CVE pattern matching
-    import re
+    # 1. CVE identifiers (priority)
     cve_matches = re.findall(r'cve-?\d{4}-?\d{4,}', text, re.IGNORECASE)
     for cve in set(cve_matches[:2]):  # Limit to 2 CVEs
         tags.append(f"#{cve.upper()}")
 
-    # Threat type keywords
-    threat_keywords = {
-        "#Ransomware": ["ransomware"],
-        "#Malware": ["malware", "virus", "worm"],
-        "#Phishing": ["phishing", "spear-phishing"],
-        "#ZeroDay": ["zero-day", "zero day"],
-        "#CriticalPatch": ["critical", "emergency patch"],
-        "#DataBreach": ["breach", "data leak"],
-        "#SupplyChain": ["supply chain"],
-        "#Vulnerability": ["vulnerability", "flaw", "vulnerability"],
+    # 2. Threat types
+    if any(kw in text for kw in ["ransomware", "encryption", "decrypt", "wiper"]):
+        tags.append("#Ransomware")
+    elif any(kw in text for kw in ["phishing", "spear phishing", "credential", "social engineering"]):
+        tags.append("#Phishing")
+    elif any(kw in text for kw in ["malware", "trojan", "backdoor", "botnet", "worm"]):
+        tags.append("#Malware")
+    elif any(kw in text for kw in ["zero.?day", "zeroday", "0day"]):
+        tags.append("#ZeroDay")
+
+    # 3. Data-related threats
+    if any(kw in text for kw in ["data breach", "breach", "data leak", "exfiltration", "stolen data", "exfiltrated", "data loss"]):
+        if "#Ransomware" not in tags:  # Avoid duplicate with ransomware
+            tags.append("#DataBreach")
+
+    if any(kw in text for kw in ["supply chain", "software supply", "vendor", "dependency"]):
+        tags.append("#SupplyChain")
+
+    # 4. Attacker groups (APT, nation-state, named groups)
+    attacker_groups = {
+        "#TeamPCP": ["teampcp"],
+        "#Lazarus": ["lazarus", "north korea", "north korean", "dprk"],
+        "#Qilin": ["qilin"],
+        "#BlackCat": ["blackcat", "alphv"],
+        "#LockBit": ["lockbit"],
+        "#Clop": ["clop", "cl0p"],
+        "#Conti": ["conti"],
+        "#FancyBear": ["fancy bear", "apt28", "sofacy"],
+        "#CozyBear": ["cozy bear", "apt29", "noblebaron"],
+        "#Equation": ["equation group"],
+        "#Sandworm": ["sandworm"],
     }
 
-    for tag, keywords in threat_keywords.items():
-        for keyword in keywords:
-            if keyword in text and tag not in tags:
-                tags.append(tag)
-                break
+    for tag, keywords in attacker_groups.items():
+        if any(kw in text for kw in keywords) and tag not in tags:
+            tags.append(tag)
+            break  # Only one attacker group tag
 
-    return tags[:3]
+    if not any(t.startswith("#") and t[1:3].isalpha() and t[1].isupper() for t in tags if t not in ["#APT", "#CVE"]):
+        # If no attacker group found, check for generic APT mentions
+        if any(kw in text for kw in ["apt", "advanced persistent threat", "nation.state", "nation state"]):
+            if "#APT" not in tags:
+                tags.append("#APT")
+
+    # 5. Impact/Vulnerability type
+    if any(kw in text for kw in ["vulnerability", "flaw", "bug", "security hole", "weakness"]):
+        if "#Vulnerability" not in tags:
+            tags.append("#Vulnerability")
+
+    if any(kw in text for kw in ["authentication", "auth bypass", "rce", "remote code execution", "sql injection", "xss"]):
+        tags.append("#Vulnerability")
+
+    # 6. Sector/Target specific
+    if any(kw in text for kw in ["healthcare", "hospital", "pharmaceutical", "pharma"]):
+        tags.append("#Healthcare")
+    elif any(kw in text for kw in ["critical infrastructure", "power grid", "utility", "scada"]):
+        tags.append("#CriticalInfra")
+
+    # 7. Technology/Platform specific
+    if any(kw in text for kw in ["cloud", "aws", "azure", "gcp", "kubernetes", "container"]):
+        tags.append("#CloudSecurity")
+    elif any(kw in text for kw in ["mobile", "ios", "android", "app"]):
+        tags.append("#MobileSecurity")
+
+    # Remove duplicates and limit to 4 tags max
+    tags = list(dict.fromkeys(tags))[:4]
+    return tags
 
 
 def get_trending_tags(alerts: list) -> dict:
