@@ -32,6 +32,7 @@ class Config:
         "KrebsOnSecurity": "https://krebsonsecurity.com/feed/",
         "Talos": "https://blog.talosintelligence.com/rss/",
         "Google": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
+        "DataBreaches": "https://www.databreaches.net/feed/",
     }
 
     # CISA Feed
