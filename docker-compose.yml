@@ -12,6 +12,8 @@ services:
       - DATABASE_FILE=/app/data/articles.db
       - JSON_DATABASE_FILE=/app/data/base_veille.json
       - HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+      - USER=appuser
+      - HOME=/app
     user: "1000:1000"
     volumes:
       - ./data:/app/data
