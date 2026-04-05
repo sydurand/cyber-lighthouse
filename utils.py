@@ -962,8 +962,13 @@ def get_embedding_model():
             from sentence_transformers import SentenceTransformer
 
             logger.info(f"Loading embedding model: {Config.EMBEDDING_MODEL}")
-            # Disable progress bars for model loading
-            _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL, progress_bar=False)
+            # progress_bar kwarg was removed in sentence-transformers v4
+            import inspect
+            sig = inspect.signature(SentenceTransformer.__init__)
+            if "progress_bar" in sig.parameters:
+                _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL, progress_bar=False)
+            else:
+                _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL)
             logger.info(f"Embedding model loaded successfully: {Config.EMBEDDING_MODEL}")
             return _embedding_model
 
