@@ -29,6 +29,9 @@ base_veille.json
 cache/
 cache/gemini_responses.json
 
+# Qwen Code
+.qwen/
+
 # Testing & coverage
 .pytest_cache/
 .coverage
