@@ -1,7 +1,6 @@
 services:
   cyber-lighthouse:
-    build: .
-    image: cyber-lighthouse:latest
+    image: ghcr.io/sydurand/cyber-lighthouse:latest
     container_name: lighthouse
     restart: unless-stopped
     env_file:
