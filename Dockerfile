@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential && \
     rm -rf /var/lib/apt/lists/*
 
-# Install dependencies (cached unless pyproject.toml changes)
-COPY pyproject.toml ./
+# Install dependencies (cached unless pyproject.toml or uv.lock changes)
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 
 # Copy source and install project
