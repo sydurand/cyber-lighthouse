@@ -45,8 +45,12 @@ def fetch_rss_feed(source: str, url: str) -> list:
     logger.debug(f"Fetching RSS feed: {source}")
     try:
         feed = feedparser.parse(url)
-        if feed.bozo:
-            logger.warning(f"Feed parsing warning for {source}: {feed.bozo_exception}")
+        # Suppress harmless bozo warnings — HTML content-type feeds parse fine,
+        # and minor XML quirks don't prevent successful parsing.
+        if feed.bozo and not str(feed.bozo_exception).startswith(
+            ('<unknown>', 'text/html', 'content type')
+        ):
+            logger.warning(f"Feed parsing issue for {source}: {feed.bozo_exception}")
         return feed.entries if hasattr(feed, 'entries') else []
     except Exception as e:
         logger.error(f"Failed to fetch {source}: {e}")
