@@ -194,7 +194,7 @@ Expected Markdown Format:
     logger.info(f"Generating summary for {len(topics)} topics with AI provider...")
 
     try:
-        ai_client = get_ai_client()
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_DAILY or None)
         summary_text = ai_client.generate_content(
             prompt=super_prompt,
             system_instruction=system_instruction,

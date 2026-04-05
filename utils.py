@@ -291,7 +291,7 @@ def is_relevant_security_article(title: str, content: str) -> bool:
             _relevance_cache[cache_key] = is_relevant
             return is_relevant
 
-        ai_client = get_ai_client()
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
         prompt = f"""Title: {title}
 Content: {content[:500]}
@@ -360,7 +360,7 @@ def extract_tags_with_ai(title: str, analysis: str) -> list:
             _tag_cache[cache_key] = fallback_tags
             return fallback_tags
 
-        ai_client = get_ai_client()
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
         # Build controlled tag list for AI reference
         valid_tags = get_tag_categories()
@@ -696,7 +696,7 @@ def deduplicate_alerts_with_ai(alerts: list) -> dict:
             logger.info(f"Rate limit low, skipping AI deduplication")
             return _deduplicate_by_keywords(alerts)
 
-        ai_client = get_ai_client()
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
         # Limit to 15 alerts to reduce token usage and API calls
         alerts_to_analyze = alerts[:15]

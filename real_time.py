@@ -21,8 +21,8 @@ from utils import (
     get_embedding_model, is_podcast_article
 )
 
-# Initialize AI client
-ai_client = get_ai_client()
+# Initialize AI client with configured provider for real-time analysis
+ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
 # Initialize database and cache
 db = Database()

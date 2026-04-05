@@ -17,6 +17,16 @@ class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+    # Ollama (local/self-hosted)
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+
+    # Provider selection per use case
+    # Valid values: 'ollama', 'openrouter', 'gemini', or '' (auto-select)
+    AI_PROVIDER_REALTIME = os.getenv("AI_PROVIDER_REALTIME", "").lower().strip()
+    AI_PROVIDER_DAILY = os.getenv("AI_PROVIDER_DAILY", "").lower().strip()
+
     # Database
     DATABASE_FILE = os.getenv("DATABASE_FILE", "articles.db")
 
@@ -74,9 +84,9 @@ class Config:
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""
-        if not cls.OPENROUTER_API_KEY and not cls.GOOGLE_API_KEY:
+        if not cls.OPENROUTER_API_KEY and not cls.GOOGLE_API_KEY and not cls.OLLAMA_BASE_URL:
             raise ValueError(
-                "Either OPENROUTER_API_KEY or GOOGLE_API_KEY environment variable is required. "
+                "Either OPENROUTER_API_KEY, GOOGLE_API_KEY, or OLLAMA_BASE_URL environment variable is required. "
                 "Set one of them in .env file or export it as an environment variable."
             )
         return True

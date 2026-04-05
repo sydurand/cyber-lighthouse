@@ -193,7 +193,7 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
             logger.warning("Rate limit low, skipping rapid alert generation")
             return f"New topic: {title}"
 
-        ai_client = get_ai_client()
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
         prompt = f"""New security topic detected:
 
