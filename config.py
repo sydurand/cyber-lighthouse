@@ -33,6 +33,7 @@ class Config:
         "Talos": "https://blog.talosintelligence.com/rss/",
         "Google": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
         "DataBreaches": "https://www.databreaches.net/feed/",
+        "UpGuard": "https://www.upguard.com/breaches/rss.xml",
     }
 
     # CISA Feed
