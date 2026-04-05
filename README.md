@@ -36,7 +36,8 @@ python server.py
 
 ```bash
 GOOGLE_API_KEY=your-gemini-api-key
-TEAMS_WEBHOOK_URL=your-webhook          # optional
+API_KEY=your-secret-key                    # protect API access (optional but recommended)
+TEAMS_WEBHOOK_URL=your-webhook             # optional
 TRAFILATURA_TIMEOUT=30
 SEMANTIC_SIMILARITY_THRESHOLD=0.70
 MIN_CONTENT_LENGTH_FOR_SCRAPING=300
@@ -63,8 +64,19 @@ RSS Feeds → Scrape → AI Analysis → Topic Clustering → Teams Notification
                 ↓
         Daily: Topics → Synthesis → CISA Correlation → Report
                 ↓
-        FastAPI Dashboard → /docs for API reference
+        FastAPI Dashboard (modular: alerts, articles, reports, tags, topics, system)
 ```
+
+### API Structure
+
+| Module | Routes |
+|--------|--------|
+| `api/alerts.py` | `/api/alerts`, `/api/alerts/{id}` |
+| `api/articles.py` | `/api/articles` (search & filter) |
+| `api/reports.py` | `/api/reports`, `/api/reports/{index}/toc`, `/api/export/report` |
+| `api/tags_routes.py` | `/api/tags`, `/api/tags/suggestions/*` |
+| `api/topics.py` | `/api/topics` (paginated) |
+| `api/system.py` | `/api/stats`, `/api/system`, `/api/version`, `/api/bookmarks/*`, `/api/export/alerts` |
 
 ## Database
 

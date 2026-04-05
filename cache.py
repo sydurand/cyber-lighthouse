@@ -202,6 +202,29 @@ class ResponseCache:
             "cache_size_mb": round(cache_size_mb, 2)
         }
 
+    def get_synthesis_reports(self) -> list:
+        """Get all synthesis reports as a list."""
+        reports = []
+        for key, entry in self.cache.items():
+            if entry.get("type") == "synthesis":
+                reports.append({
+                    "cache_key": key,
+                    "content": entry.get("content", entry.get("response", "")),
+                    "articles_count": entry.get("articles_count", 0),
+                    "generated_date": entry.get("generated_date", ""),
+                    "created_at": entry.get("created_at", ""),
+                })
+        # Sort by generated_date descending
+        reports.sort(key=lambda r: r.get("generated_date", ""), reverse=True)
+        return reports
+
+    def get_synthesis_report_by_index(self, index: int) -> dict | None:
+        """Get a synthesis report by index (sorted by date descending)."""
+        reports = self.get_synthesis_reports()
+        if 0 <= index < len(reports):
+            return reports[index]
+        return None
+
     def clear_all(self):
         """Clear entire cache."""
         self.cache = {}

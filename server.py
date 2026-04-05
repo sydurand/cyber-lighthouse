@@ -1,19 +1,18 @@
 """FastAPI web server for Cyber-Lighthouse dashboard."""
 import os
 import sys
+import time
 from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
 import re
 
-from api import router
+from api import router, set_server_start_time
 from logging_config import logger
 from task_queue import get_task_queue
 from task_scheduler import get_scheduler
@@ -31,13 +30,49 @@ def get_version() -> str:
     return "0.0.0"
 
 
+# ============================================================================
+# API Key Authentication
+# ============================================================================
+
+API_KEY = os.getenv("API_KEY", "")
+
+
+async def api_key_middleware(request: Request, call_next):
+    """Reject requests with invalid/missing API key if API_KEY env var is set."""
+    # Allow static files and docs through
+    path = request.url.path
+    if path.startswith("/static") or path in ("/docs", "/openapi.json", "/redoc"):
+        return await call_next(request)
+
+    if API_KEY:
+        provided_key = request.headers.get("X-API-Key", "")
+        if provided_key != API_KEY:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Invalid or missing API key. Provide it via X-API-Key header."}
+            )
+
+    return await call_next(request)
+
+
+# ============================================================================
+# Application
+# ============================================================================
+
 # Lifespan context manager for startup and shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle."""
-    # Startup
+    # Record start time for uptime tracking
+    set_server_start_time(time.time())
+
     logger.info("Cyber-Lighthouse Dashboard server starting...")
     logger.info(f"API documentation available at http://localhost:8000/docs")
+
+    if API_KEY:
+        logger.info("API key authentication enabled")
+    else:
+        logger.warning("API key authentication disabled — set API_KEY env var to protect access")
 
     # Start task queue with 1 worker and 2s delay between tasks
     task_queue = get_task_queue(num_workers=1, batch_delay=2)
@@ -64,6 +99,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add API key middleware (runs first, before CORS)
+app.middleware("http")(api_key_middleware)
+
 # Add CORS middleware for local access
 app.add_middleware(
     CORSMiddleware,
@@ -72,7 +110,7 @@ app.add_middleware(
         "127.0.0.1",
         "0.0.0.0",
         "*.local",
-    ],  # Allow local and LAN access
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,6 +124,10 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+
+# ============================================================================
+# Root and Health
+# ============================================================================
 
 @app.get("/")
 async def root():
@@ -101,7 +143,6 @@ async def health_check():
     """Health check endpoint with real dependency verification."""
     issues = []
 
-    # Check database connectivity
     try:
         from database import Database
         db = Database()
@@ -109,7 +150,6 @@ async def health_check():
     except Exception as e:
         issues.append(f"Database error: {str(e)}")
 
-    # Check cache accessibility
     try:
         from cache import get_cache
         cache = get_cache()
@@ -117,12 +157,12 @@ async def health_check():
     except Exception as e:
         issues.append(f"Cache error: {str(e)}")
 
-    # Determine overall status
     status = "healthy" if not issues else "degraded"
 
     return {
         "status": status,
         "service": "Cyber-Lighthouse Dashboard",
+        "version": get_version(),
         "timestamp": datetime.now().isoformat(),
         "checks": {
             "database": "ok" if not any("Database" in i for i in issues) else "error",
