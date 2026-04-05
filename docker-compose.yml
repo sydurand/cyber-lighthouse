@@ -1,0 +1,33 @@
+services:
+  cyber-lighthouse:
+    build: .
+    image: cyber-lighthouse:latest
+    container_name: lighthouse
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - data:/app
+      - cache:/app/cache
+      - logs:/app/logs
+      - reports:/app/reports
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Limit resources to prevent ML models from consuming all memory
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+volumes:
+  data:
+  cache:
+  logs:
+  reports:
