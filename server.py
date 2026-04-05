@@ -224,6 +224,9 @@ def main():
         host="0.0.0.0",
         port=8000,
         log_level="info",
+        timeout_keep_alive=5,       # Close idle connections after 5s
+        limit_concurrency=100,      # Max concurrent connections
+        backlog=128,               # Socket backlog size
     )
 
 
