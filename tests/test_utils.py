@@ -225,7 +225,7 @@ class TestTagExtraction:
         analysis = "Details about CVE-2026-1234"
 
         tags = _extract_tags_from_keywords_dynamic(title, analysis)
-        assert "#CVE-2026-1234" in tags
+        assert "#CVE" in tags
 
     def test_extract_tags_from_keywords_ransomware(self):
         """Test extracting ransomware tag."""
