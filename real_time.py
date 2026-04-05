@@ -306,13 +306,14 @@ def process_new_articles():
                 # Extract content with fallbacks
                 content = extract_article_content(article)
 
-                # Skip if similar to existing articles (optimization)
-                if detect_similar_articles({"title": article.title, "content": content}, existing_articles):
+                # Check if article is similar to existing ones
+                is_similar = detect_similar_articles({"title": article.title, "content": content}, existing_articles)
+                if is_similar:
                     skipped_similar += 1
-                    continue
+                    logger.info(f"Similar article detected ({source}): {article.title[:60]}... (will store but skip AI analysis)")
 
                 # Fetch full article content if RSS summary is short
-                if len(content) < Config.MIN_CONTENT_LENGTH_FOR_SCRAPING:
+                if len(content) < Config.MIN_CONTENT_LENGTH_FOR_SCRAPING and not is_similar:
                     logger.info(f"RSS summary too short ({len(content)} chars), attempting full scrape...")
                     content = fetch_full_article_content(article.link, content, Config.TRAFILATURA_TIMEOUT)
                     articles_scraped += 1
@@ -320,15 +321,21 @@ def process_new_articles():
                 new_articles_count += 1
                 logger.info(f"New article detected ({source}): {article.title[:60]}...")
 
-                # Check cache before analyzing
-                cached = cache.get_analysis(article.title, content)
-                if cached:
+                # Reuse cached analysis for similar articles (skip AI call)
+                if is_similar:
+                    # Use raw content as lightweight "analysis" — same story, different source
+                    analysis = content[:300] if content else "Similar article — analysis skipped (same topic)"
                     cached_analyses += 1
-                    analysis = cached
-                    logger.info(f"✓ Using cached analysis (saved 1 API call)")
                 else:
-                    # Analyze with AI (with rate limit check)
-                    analysis = analyze_article_with_ai(article.title, content)
+                    # Check cache before analyzing
+                    cached = cache.get_analysis(article.title, content)
+                    if cached:
+                        cached_analyses += 1
+                        analysis = cached
+                        logger.info(f"✓ Using cached analysis (saved 1 API call)")
+                    else:
+                        # Analyze with AI (with rate limit check)
+                        analysis = analyze_article_with_ai(article.title, content)
 
                 logger.info(f"\n{analysis}")
                 logger.info("-" * 60)
@@ -386,10 +393,10 @@ def process_new_articles():
     logger.info(f"  New articles detected: {new_articles_count}")
     logger.info(f"  Full articles scraped: {articles_scraped}")
     logger.info(f"  Old articles filtered (>1 day): {articles_filtered_by_date}")
-    logger.info(f"  Similar articles skipped: {skipped_similar} (saved {skipped_similar} API calls)")
+    logger.info(f"  Similar articles stored (no AI): {skipped_similar}")
     logger.info(f"  Podcast articles filtered: {skipped_podcasts} (saved ~{skipped_podcasts} API calls)")
-    logger.info(f"  Cached analyses used: {cached_analyses} (saved {cached_analyses} API calls)")
-    logger.info(f"  Fresh API analyses: {new_articles_count - cached_analyses}")
+    logger.info(f"  Cached analyses used: {cached_analyses}")
+    logger.info(f"  Fresh API analyses: {new_articles_count - skipped_similar - cached_analyses}")
     logger.info(f"  Total API calls saved: {articles_filtered_by_date + skipped_similar + skipped_podcasts + cached_analyses}")
     logger.info(f"  Articles queued for clustering: {articles_queued}")
     logger.info(f"  New topics created: {clustering_stats['new_topics']}")
