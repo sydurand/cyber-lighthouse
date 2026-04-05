@@ -105,13 +105,7 @@ app.middleware("http")(api_key_middleware)
 # Add CORS middleware for local access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "*.local",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
