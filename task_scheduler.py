@@ -190,12 +190,13 @@ class TaskScheduler:
         try:
             from real_time import process_new_articles
 
-            result = process_new_articles()
+            result = process_new_articles() or {}
             logger.info(f"Real-time run complete: {result}")
             return {
-                "new_articles": result.get("new_topics", 0),
-                "grouped_articles": result.get("grouped_articles", 0),
-                "failed": result.get("failed", 0),
+                "new_articles": result.get("new_articles", 0),
+                "grouped_articles": result.get("articles_queued", 0),
+                "failed": result.get("skipped_podcasts", 0),
+                "cached": result.get("cached_analyses", 0),
             }
         except Exception as e:
             logger.error(f"Real-time execution failed: {e}", exc_info=True)
@@ -213,11 +214,16 @@ class TaskScheduler:
             from daily_summary import generate_daily_summary
 
             result = generate_daily_summary()
-            logger.info(f"Daily summary complete: {result}")
-            return {
-                "articles_count": result.get("articles_count", 0),
-                "topics_processed": result.get("topics_processed", 0),
-            }
+            if result:
+                logger.info(f"Daily summary complete: {len(result)} chars generated")
+                return {
+                    "articles_count": 1,
+                    "topics_processed": 1,
+                    "summary_length": len(result),
+                }
+            else:
+                logger.warning("Daily summary returned no content")
+                return {"articles_count": 0, "topics_processed": 0, "note": "no unprocessed topics"}
         except Exception as e:
             logger.error(f"Daily summary execution failed: {e}", exc_info=True)
             return {"error": str(e)}

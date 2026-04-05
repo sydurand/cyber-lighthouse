@@ -383,6 +383,15 @@ def process_new_articles():
     elif skipped_similar == 0:
         logger.info("No new articles detected")
 
+    return {
+        "new_articles": new_articles_count,
+        "skipped_similar": skipped_similar,
+        "skipped_podcasts": skipped_podcasts,
+        "cached_analyses": cached_analyses,
+        "articles_queued": articles_queued,
+        "articles_scraped": articles_scraped,
+    }
+
 
 def main():
     """Main entry point for real-time monitoring."""
