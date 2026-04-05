@@ -26,6 +26,8 @@ jobs:
           enable-cache: true
 
       - name: Run tests
+        env:
+          GOOGLE_API_KEY: dummy-key-for-tests
         run: uv run pytest --cov=. tests/
 
   build-and-publish:
