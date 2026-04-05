@@ -8,7 +8,7 @@ from utils import (
     sanitize_title,
     detect_similar_articles,
     is_relevant_security_article,
-    _extract_tags_from_keywords,
+    _extract_tags_from_keywords_dynamic,
     get_trending_tags,
     _deduplicate_by_keywords,
 )
@@ -224,7 +224,7 @@ class TestTagExtraction:
         title = "CVE-2026-1234 Vulnerability"
         analysis = "Details about CVE-2026-1234"
 
-        tags = _extract_tags_from_keywords(title, analysis)
+        tags = _extract_tags_from_keywords_dynamic(title, analysis)
         assert "#CVE-2026-1234" in tags
 
     def test_extract_tags_from_keywords_ransomware(self):
@@ -232,7 +232,7 @@ class TestTagExtraction:
         title = "Ransomware Attack"
         analysis = "Ransomware campaign details"
 
-        tags = _extract_tags_from_keywords(title, analysis)
+        tags = _extract_tags_from_keywords_dynamic(title, analysis)
         assert "#Ransomware" in tags
 
     def test_extract_tags_from_keywords_multiple_tags(self):
@@ -240,13 +240,13 @@ class TestTagExtraction:
         title = "CVE-2026-1234 Ransomware Vulnerability"
         analysis = "Critical ransomware vulnerability with CVE-2026-1234"
 
-        tags = _extract_tags_from_keywords(title, analysis)
+        tags = _extract_tags_from_keywords_dynamic(title, analysis)
         assert len(tags) > 0
         assert len(tags) <= 3
 
     def test_extract_tags_from_keywords_empty_content(self):
         """Test with empty content."""
-        tags = _extract_tags_from_keywords("", "")
+        tags = _extract_tags_from_keywords_dynamic("", "")
         assert tags == []
 
 
