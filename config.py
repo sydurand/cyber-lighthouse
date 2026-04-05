@@ -34,6 +34,7 @@ class Config:
         "Google": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
         "DataBreaches": "https://www.databreaches.net/feed/",
         "UpGuard": "https://www.upguard.com/breaches/rss.xml",
+        "Wiz": "https://www.wiz.io/api/feed/cloud-threat-landscape/rss.xml",
     }
 
     # CISA Feed
