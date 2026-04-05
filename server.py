@@ -27,7 +27,7 @@ def get_version() -> str:
             match = re.search(r'version\s*=\s*"(\d+\.\d+\.\d+)"', content)
             if match:
                 return match.group(1)
-    return "0.2.4"
+    return "0.2.5"
 
 
 # ============================================================================
