@@ -29,6 +29,9 @@ base_veille.json
 cache/
 cache/gemini_responses.json
 
+# Generated reports
+reports/
+
 # Qwen Code
 .qwen/
 
