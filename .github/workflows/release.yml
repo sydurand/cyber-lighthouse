@@ -20,18 +20,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.14"
-
-      - name: Install dependencies
-        run: |
-          pip install --no-cache-dir .
-          pip install --no-cache-dir pytest pytest-cov pytest-mock
+          enable-cache: true
 
       - name: Run tests
-        run: pytest --cov=. tests/
+        run: uv run pytest --cov=. tests/
 
   build-and-publish:
     needs: test
