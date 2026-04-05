@@ -1,5 +1,5 @@
 """Real-time threat intelligence monitoring from RSS feeds."""
-from datetime import datetime
+from datetime import datetime, timedelta
 import feedparser
 import time
 
@@ -262,12 +262,28 @@ def process_new_articles():
     # Article queue for semantic clustering processing
     article_queue = []
 
+    # Only process articles from the last 24 hours to optimize tokens
+    cutoff_date = datetime.now() - timedelta(days=1)
+    articles_filtered_by_date = 0
+
     for source, url in Config.RSS_FEEDS.items():
         try:
             logger.info(f"Processing feed: {source}")
             articles = fetch_rss_feed(source, url)
 
             for article in articles:
+                # Filter articles older than 1 day to optimize token usage
+                article_date = None
+                if hasattr(article, 'published_parsed') and article.published_parsed:
+                    article_date = datetime(*article.published_parsed[:6])
+                elif hasattr(article, 'updated_parsed') and article.updated_parsed:
+                    article_date = datetime(*article.updated_parsed[:6])
+
+                if article_date and article_date < cutoff_date:
+                    articles_filtered_by_date += 1
+                    logger.debug(f"Skipping old article (>{1} day): {article.title[:60]}...")
+                    continue
+
                 # Validate article has required fields
                 if not validate_rss_article(article):
                     continue
@@ -365,11 +381,12 @@ def process_new_articles():
     logger.info("Real-time Monitoring Summary:")
     logger.info(f"  New articles detected: {new_articles_count}")
     logger.info(f"  Full articles scraped: {articles_scraped}")
+    logger.info(f"  Old articles filtered (>1 day): {articles_filtered_by_date}")
     logger.info(f"  Similar articles skipped: {skipped_similar} (saved {skipped_similar} API calls)")
     logger.info(f"  Podcast articles filtered: {skipped_podcasts} (saved ~{skipped_podcasts} API calls)")
     logger.info(f"  Cached analyses used: {cached_analyses} (saved {cached_analyses} API calls)")
     logger.info(f"  Fresh API analyses: {new_articles_count - cached_analyses}")
-    logger.info(f"  Total API calls saved: {skipped_similar + skipped_podcasts + cached_analyses}")
+    logger.info(f"  Total API calls saved: {articles_filtered_by_date + skipped_similar + skipped_podcasts + cached_analyses}")
     logger.info(f"  Articles queued for clustering: {articles_queued}")
     logger.info(f"  New topics created: {clustering_stats['new_topics']}")
     logger.info(f"  Articles grouped to topics: {clustering_stats['grouped_articles']}")
@@ -390,6 +407,7 @@ def process_new_articles():
         "cached_analyses": cached_analyses,
         "articles_queued": articles_queued,
         "articles_scraped": articles_scraped,
+        "articles_filtered_by_date": articles_filtered_by_date,
     }
 
 

@@ -27,7 +27,12 @@ class Config:
     RSS_FEEDS = {
         "BleepingComputer": "https://www.bleepingcomputer.com/feed/",
         "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml",
-        "DarkReading": "https://www.darkreading.com/rss.xml"
+        "DarkReading": "https://www.darkreading.com/rss.xml",
+        "MS-ISAC": "https://www.cisecurity.org/feed/advisories",
+        "KrebsOnSecurity": "https://krebsonsecurity.com/feed/",
+        "Talos": "https://blog.talosintelligence.com/rss/",
+        "Google": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
+        "HIBP_Breaches": "https://feeds.feedburner.com/HaveIBeenPwned"
     }
 
     # CISA Feed

@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -10,11 +11,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
+import re
 
 from api import router
 from logging_config import logger
 from task_queue import get_task_queue
 from task_scheduler import get_scheduler
+
+
+def get_version() -> str:
+    """Read version from pyproject.toml."""
+    pyproject_path = Path(__file__).parent / "pyproject.toml"
+    if pyproject_path.exists():
+        with open(pyproject_path, "r") as f:
+            content = f.read()
+            match = re.search(r'version\s*=\s*"(\d+\.\d+\.\d+)"', content)
+            if match:
+                return match.group(1)
+    return "0.0.0"
 
 
 # Lifespan context manager for startup and shutdown events
@@ -46,7 +60,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Cyber-Lighthouse Dashboard",
     description="Web dashboard for threat intelligence monitoring",
-    version="1.0.0",
+    version=get_version(),
     lifespan=lifespan,
 )
 

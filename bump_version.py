@@ -19,7 +19,7 @@ class VersionManager:
     VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)\.(\d+)")
     FILES_TO_UPDATE = [
         "pyproject.toml",
-        "setup.py",  # Optional - updated if exists
+        "server.py",
     ]
 
     def __init__(self):
