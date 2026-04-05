@@ -1,7 +1,7 @@
 """AI tasks for background processing."""
 import hashlib
 from logging_config import logger
-from utils import extract_tags_with_gemini, is_relevant_security_article
+from utils import extract_tags_with_ai, is_relevant_security_article
 from cache import get_cache
 
 
@@ -36,7 +36,7 @@ def process_article_batch(articles: list) -> dict:
                 continue
 
             # Extract tags
-            tags = extract_tags_with_gemini(title, analysis)
+            tags = extract_tags_with_ai(title, analysis)
 
             results["articles"].append({
                 "id": article_id,
@@ -45,10 +45,10 @@ def process_article_batch(articles: list) -> dict:
                 "analysis": analysis,
             })
             results["processed"] += 1
-            logger.debug(f"Article {article_id} traité: {len(tags)} tags")
+            logger.debug(f"Article {article_id} processed: {len(tags)} tags")
 
         except Exception as e:
-            logger.error(f"Erreur traitement article {article_id}: {e}")
+            logger.error(f"Error processing article {article_id}: {e}")
             continue
 
     logger.info(f"[AI_TASK] Batch complete: {results['processed']} processed, {results['filtered_out']} rejected")
@@ -68,14 +68,14 @@ def extract_tags_for_article(article_id: int, title: str, analysis: str) -> dict
     """
     try:
         logger.debug(f"[AI_TASK] Extracting tags for article {article_id}")
-        tags = extract_tags_with_gemini(title, analysis)
+        tags = extract_tags_with_ai(title, analysis)
         return {
             "article_id": article_id,
             "tags": tags,
             "status": "success"
         }
     except Exception as e:
-        logger.error(f"Erreur extraction tags article {article_id}: {e}")
+        logger.error(f"Error extracting tags for article {article_id}: {e}")
         return {
             "article_id": article_id,
             "tags": [],
@@ -104,7 +104,7 @@ def filter_article_relevance(article_id: int, title: str, content: str) -> dict:
             "status": "success"
         }
     except Exception as e:
-        logger.error(f"Erreur vérification pertinence article {article_id}: {e}")
+        logger.error(f"Error verifying relevance for article {article_id}: {e}")
         return {
             "article_id": article_id,
             "is_relevant": False,
@@ -124,7 +124,7 @@ def analyze_unprocessed_articles(batch_size: int = 10) -> dict:
     """
     try:
         from database import Database
-        from real_time import analyze_article_with_gemini
+        from real_time import analyze_article_with_ai
 
         logger.info("[AI_TASK] Analyzing unprocessed articles")
         db = Database()
@@ -145,8 +145,8 @@ def analyze_unprocessed_articles(batch_size: int = 10) -> dict:
                 title = article.get('title', '')
                 content = article.get('content', '')
 
-                # Analyze with Gemini
-                analysis = analyze_article_with_gemini(title, content)
+                # Analyze with AI
+                analysis = analyze_article_with_ai(title, content)
 
                 logger.debug(f"✓ Analyzed: {title[:50]}...")
                 processed += 1

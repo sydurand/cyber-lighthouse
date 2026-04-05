@@ -1,5 +1,5 @@
 """
-API optimization strategies to reduce Gemini API calls.
+API optimization strategies to reduce AI API calls.
 
 Implements:
 1. Batch processing (analyze multiple articles in one call)
@@ -8,6 +8,7 @@ Implements:
 4. Smart filtering (skip low-value articles)
 """
 import hashlib
+import threading
 from logging_config import logger
 from config import Config
 
@@ -272,13 +273,16 @@ class APICallCounter:
         }
 
 
-# Global counter instance
+# Global counter instance with thread safety
 _call_counter = None
+_counter_lock = threading.Lock()
 
 
 def get_call_counter() -> APICallCounter:
-    """Get or create global API call counter."""
+    """Get or create the global API call counter instance (thread-safe)."""
     global _call_counter
     if _call_counter is None:
-        _call_counter = APICallCounter()
+        with _counter_lock:
+            if _call_counter is None:  # Double-check locking
+                _call_counter = APICallCounter()
     return _call_counter

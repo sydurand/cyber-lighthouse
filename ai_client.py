@@ -1,12 +1,13 @@
-"""Abstraction layer for AI providers (Gemini or OpenRouter)."""
+"""Abstraction layer for AI providers."""
 import requests
 import time
+import threading
 from logging_config import logger
 from config import Config
 
 
 class AIClient:
-    """Unified client for both Gemini and OpenRouter APIs."""
+    """Unified client for AI providers."""
 
     def __init__(self):
         """Initialize the appropriate AI client based on configuration."""
@@ -174,13 +175,16 @@ class AIClient:
             raise
 
 
-# Global client instance
+# Global client instance with thread safety
 _client = None
+_client_lock = threading.Lock()
 
 
 def get_ai_client() -> AIClient:
-    """Get or create the global AI client instance."""
+    """Get or create the global AI client instance (thread-safe)."""
     global _client
     if _client is None:
-        _client = AIClient()
+        with _client_lock:
+            if _client is None:  # Double-check locking
+                _client = AIClient()
     return _client

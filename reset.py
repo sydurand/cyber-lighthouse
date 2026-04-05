@@ -28,7 +28,7 @@ def reset_database():
 
 
 def reset_cache():
-    """Clear the Gemini response cache."""
+    """Clear the AI response cache."""
     cache_dir = "cache"
     cache_file = os.path.join(cache_dir, "gemini_responses.json")
 
@@ -105,7 +105,7 @@ def confirm_reset():
     print("=" * 70)
     print("\nThis will remove:")
     print("  • SQLite database (articles.db)")
-    print("  • Cache files (Gemini responses)")
+    print("  • Cache files (AI responses)")
     print("  • Log files")
     print("  • Archived reports")
     print("  • JSON exports")

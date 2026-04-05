@@ -21,7 +21,7 @@ from utils import (
     get_embedding_model, is_podcast_article
 )
 
-# Initialize AI client (Gemini or OpenRouter)
+# Initialize AI client
 ai_client = get_ai_client()
 
 # Initialize database and cache
@@ -54,11 +54,11 @@ def fetch_rss_feed(source: str, url: str) -> list:
 
 
 @retry_with_backoff
-def analyze_article_with_gemini(title: str, content: str) -> str:
+def analyze_article_with_ai(title: str, content: str) -> str:
     """
     Perform rapid AI analysis of a security article.
 
-    Uses the configured AI provider (Gemini or OpenRouter) to generate a quick SOC-level alert analysis.
+    Uses the configured AI provider to generate a quick SOC-level alert analysis.
     Checks cache first to reduce API calls.
 
     Args:
@@ -109,6 +109,7 @@ Provide ONLY this format, be very concise (1 line max per bullet point):
 def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
     """
     Cluster article into existing topics using semantic similarity.
+    Loads embeddings from database instead of recalculating them.
 
     Args:
         article_data: Article dict with 'title', 'content' keys
@@ -122,29 +123,12 @@ def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
     try:
         model = get_embedding_model()
         if model is None:
-            logger.warning("Embedding model unavailable, treating as new topic")
+            logger.debug("Embedding model unavailable, treating as new topic")
             return (True, None)
 
-        # Get all existing topics
-        existing_topics = []
-        try:
-            with db.db_file:
-                import sqlite3
-                conn = sqlite3.connect(db.db_file)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM topics WHERE processed_for_summary = 0")
-                existing_topics = [dict(row) for row in cursor.fetchall()]
-                conn.close()
-        except Exception as e:
-            logger.debug(f"Error loading topics: {e}")
-            return (True, None)
-
-        # Generate embeddings for existing topics if not cached
-        for topic in existing_topics:
-            if 'embedding' not in topic:
-                topic_text = topic.get('main_title', '')[:500]
-                topic['embedding'] = model.encode([topic_text])[0]
+        # Get all existing topics with embeddings from database
+        existing_topics = db.get_all_topics_with_embeddings(processed_only=False)
+        logger.debug(f"Loaded {len(existing_topics)} topics from database")
 
         # Perform clustering
         is_new, matched_topic_id = cluster_articles_with_embeddings(
@@ -156,7 +140,7 @@ def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
         return (is_new, matched_topic_id)
 
     except Exception as e:
-        logger.error(f"Error in article clustering: {e}")
+        logger.error(f"Error in article clustering: {e}", exc_info=True)
         return (True, None)
 
 
@@ -180,6 +164,9 @@ def process_queue_with_throttling(article_queue: list, db: Database) -> dict:
 
     logger.info(f"Processing queue of {len(article_queue)} articles with {Config.API_DELAY_BETWEEN_REQUESTS}s throttling...")
 
+    # Load embedding model once for generating topic embeddings
+    model = get_embedding_model()
+
     for i, article in enumerate(article_queue):
         try:
             # Apply throttling
@@ -194,8 +181,20 @@ def process_queue_with_throttling(article_queue: list, db: Database) -> dict:
             is_new_topic, topic_id = cluster_article_into_topics(article, db)
 
             if is_new_topic:
-                # Create new topic
-                new_topic_id = db.create_topic(title)
+                # Generate embedding for new topic
+                topic_embedding_bytes = None
+                if model is not None:
+                    try:
+                        import numpy as np
+                        topic_text = f"{title} {content[:450]}"
+                        embedding = model.encode([topic_text], show_progress_bar=False)[0]
+                        # Serialize embedding to bytes for storage
+                        topic_embedding_bytes = embedding.tobytes()
+                    except Exception as e:
+                        logger.warning(f"Failed to generate embedding for new topic: {e}")
+
+                # Create new topic with embedding
+                new_topic_id = db.create_topic(title, embedding=topic_embedding_bytes)
                 if new_topic_id:
                     # Add article to new topic
                     article_id = article.get('id')
@@ -308,8 +307,8 @@ def process_new_articles():
                     analysis = cached
                     logger.info(f"✓ Using cached analysis (saved 1 API call)")
                 else:
-                    # Analyze with Gemini (with rate limit check)
-                    analysis = analyze_article_with_gemini(article.title, content)
+                    # Analyze with AI (with rate limit check)
+                    analysis = analyze_article_with_ai(article.title, content)
 
                 logger.info(f"\n{analysis}")
                 logger.info("-" * 60)

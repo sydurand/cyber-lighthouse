@@ -1,6 +1,8 @@
 """Daily threat intelligence summary generation and archival."""
 from datetime import datetime, timedelta
 import os
+import json
+import hashlib
 
 from config import Config
 from logging_config import logger
@@ -26,6 +28,41 @@ def fetch_cisa_context():
     except Exception as e:
         logger.warning(f"CISA fetch failed: {e}")
         return "No recent CISA data available."
+
+
+def cache_synthesis_report(summary_text, topics, articles_hash):
+    """Saves the synthesis report to the cache for the web interface."""
+    cache_file = "cache/gemini_responses.json"
+    cache_data = {}
+
+    # Load existing cache
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load cache, starting fresh: {e}")
+
+    # Create cache entry with the format expected by /api/reports endpoint
+    cache_key = f"synthesis:{articles_hash}"
+    cache_data[cache_key] = {
+        "type": "synthesis",
+        "content": summary_text,
+        "articles_count": len(topics),
+        "generated_date": datetime.now().strftime("%Y-%m-%d"),
+        "timestamp": datetime.now().isoformat(),
+        "created_at": datetime.now().isoformat(),
+        "response": summary_text  # Keep for backward compatibility
+    }
+
+    # Save cache
+    try:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Synthesis report cached with key: {cache_key}")
+    except Exception as e:
+        logger.error(f"Failed to cache synthesis report: {e}")
 
 
 def archive_report_locally(markdown_text):
@@ -177,6 +214,12 @@ Expected Markdown Format:
 
         # Archive locally
         archive_report_locally(summary_text)
+
+        # Cache for web interface
+        topics_hash = hashlib.md5(
+            json.dumps([(t['id'], t['main_title']) for t in topics], sort_keys=True).encode()
+        ).hexdigest()
+        cache_synthesis_report(summary_text, topics, topics_hash)
 
         # Mark topics as processed
         try:

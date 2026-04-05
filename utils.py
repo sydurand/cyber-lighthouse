@@ -1,6 +1,7 @@
 """Utility functions for Cyber-Lighthouse."""
 import time
 import hashlib
+import threading
 from functools import wraps
 from logging_config import logger
 from config import Config
@@ -325,13 +326,12 @@ YES = actionable threat/CVE/malware details. NO = generic news/podcast/summary."
         return is_relevant
 
 
-def extract_tags_with_gemini(title: str, analysis: str) -> list:
+def extract_tags_with_ai(title: str, analysis: str) -> list:
     """
     Extract security tags from article title and analysis using AI.
 
-    Uses AI-first approach for dynamic, intelligent tag extraction.
-    Tags focus on: CVE IDs, threat types, attacker groups, vulnerabilities.
-    Falls back to keyword extraction only if AI is unavailable.
+    Uses AI to map article content to the controlled TAG_CATEGORIES vocabulary.
+    Falls back to keyword extraction if AI is unavailable.
     """
     if not title or not analysis:
         return []
@@ -342,7 +342,7 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
         logger.debug(f"Tag cache hit for: {title[:50]}...")
         return _tag_cache[cache_key]
 
-    # Try AI extraction first (dynamic, intelligent)
+    # Try AI extraction first (maps to controlled vocabulary)
     try:
         from config import Config
         from ai_client import get_ai_client
@@ -358,20 +358,25 @@ def extract_tags_with_gemini(title: str, analysis: str) -> list:
 
         ai_client = get_ai_client()
 
+        # Build controlled tag list for AI reference
+        valid_tags = get_tag_categories()
+        max_tags = get_max_tags()
+        allowed_tags = ", ".join(sorted(valid_tags))
+
         prompt = f"""Article Title: {title}
 
 Analysis: {analysis[:500]}
 
-Extract 2-4 security tags from this article. Focus on:
-- CVE identifiers (e.g., #CVE-2026-1234)
-- Threat types (e.g., #Ransomware, #DataBreach, #Phishing, #ZeroDay)
-- Attacker groups or APTs (e.g., #TeamPCP, #Lazarus, #APT29)
-- Specific vulnerabilities or attack vectors
+Select 2-{MAX_TAGS_PER_ARTICLE} tags from this EXACT list that best describe the article:
+{allowed_tags}
 
-Format: #TagName (no spaces, use PascalCase or exact CVE format)
-Return ONLY the tags, one per line, nothing else."""
+Rules:
+- Return ONLY the tag names, one per line
+- Do NOT invent new tags
+- Do NOT include explanations
+- Pick tags that accurately describe the article content"""
 
-        instruction = """You are a cybersecurity analyst. Extract concise, relevant security tags from threat intelligence articles. Focus on CVEs, threat types, attacker groups, and key vulnerabilities. Return only tags in #TagName format, one per line."""
+        instruction = f"""You are a cybersecurity analyst tagging threat intelligence articles. Select tags ONLY from the provided controlled vocabulary list. Return 2-{MAX_TAGS_PER_ARTICLE} tags maximum, one per line, exact format #TagName."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
@@ -383,19 +388,47 @@ Return ONLY the tags, one per line, nothing else."""
 
         call_counter.add_call()
 
-        # Parse tags from AI response
+        # Parse and normalize tags from AI response
         tags = []
+        emerging_tags = []
+        valid_tags = get_tag_categories()
+
         for line in response_text.strip().split('\n'):
             tag = line.strip()
-            # Remove bullet points or numbers if present
-            tag = tag.lstrip('-•*').strip()
-            if tag.startswith('#'):
-                tags.append(tag)
-            elif tag and len(tag) > 2:
-                tags.append(f"#{tag}")
+            # Remove bullet points, numbers, etc.
+            tag = tag.lstrip('-•*0123456789. ').strip()
+            # Ensure # prefix
+            if not tag.startswith('#'):
+                tag = f"#{tag}"
 
-        # Clean up and limit tags
-        tags = list(dict.fromkeys(tags))[:4]  # Remove duplicates, limit to 4
+            # Validate against controlled vocabulary
+            if tag in valid_tags:
+                tags.append(tag)
+            elif tag and len(tag) > 2 and tag.startswith('#'):
+                # Potential new tag not in controlled vocabulary
+                emerging_tags.append(tag)
+
+        # Record emerging tags as suggestions
+        if emerging_tags:
+            try:
+                from database import Database
+                db = Database()
+                # Find article ID by title for retroactive tag assignment
+                article_id = None
+                all_articles = db.get_all_articles()
+                for a in all_articles:
+                    if a.get('title') == title:
+                        article_id = a.get('id')
+                        break
+
+                for new_tag in emerging_tags:
+                    db.suggest_tag(new_tag, article_title=title, article_id=article_id)
+                    logger.info(f"Emerging tag suggested: {new_tag} from '{title[:50]}...' (article_id: {article_id})")
+            except Exception as e:
+                logger.debug(f"Failed to record tag suggestion: {e}")
+
+        # Remove duplicates and limit
+        tags = list(dict.fromkeys(tags))[:max_tags]
 
         if tags:
             # Cache the AI result
@@ -417,88 +450,184 @@ Return ONLY the tags, one per line, nothing else."""
         return fallback_tags
 
 
+# ============================================================================
+# CONTROLLED TAG VOCABULARY (loaded from tags.json with hot-reload)
+# Limited set of ~35 standardized tags for consistent trend tracking.
+# Edit tags.json to add/remove tags without code changes.
+# ============================================================================
+
+_tags_config = None
+_tags_config_mtime = 0
+
+
+def _load_tags_config():
+    """
+    Load controlled tag vocabulary from tags.json.
+    Auto-reloads when file changes (hot-reload support).
+    """
+    global _tags_config, _tags_config_mtime
+    import os
+    import json
+
+    config_file = os.path.join(os.path.dirname(__file__), "tags.json")
+
+    try:
+        mtime = os.path.getmtime(config_file)
+
+        # Reload only if file changed
+        if _tags_config is None or mtime > _tags_config_mtime:
+            with open(config_file, "r", encoding="utf-8") as f:
+                _tags_config = json.load(f)
+            _tags_config_mtime = mtime
+            logger.info(f"Tags configuration loaded from {config_file}")
+
+    except FileNotFoundError:
+        logger.warning("tags.json not found, using defaults")
+        _tags_config = _get_default_tags_config()
+    except Exception as e:
+        logger.error(f"Failed to load tags.json: {e}")
+        if _tags_config is None:
+            _tags_config = _get_default_tags_config()
+
+
+def _get_default_tags_config():
+    """Fallback default tags configuration."""
+    return {
+        "max_tags_per_article": 5,
+        "categories": {
+            "TTPs": ["#Ransomware", "#Phishing", "#Malware", "#ZeroDay", "#SupplyChain",
+                     "#Exfiltration", "#PrivilegeEscalation", "#Persistence", "#LateralMovement",
+                     "#SocialEngineering"],
+            "Threat_Actors": ["#APT", "#Lazarus", "#BlackCat", "#LockBit", "#Qilin",
+                             "#TeamPCP", "#Sandworm", "#FancyBear", "#CozyBear", "#Clop"],
+            "CVEs_Vulnerabilities": ["#CVE", "#Vulnerability", "#Exploit"],
+            "IOCs": ["#MaliciousIP", "#MaliciousDomain", "#MaliciousHash"],
+            "Events_Impact": ["#DataBreach", "#Incident", "#Patch", "#Disclosure", "#ThreatIntel"],
+            "Targets_Sectors": ["#CriticalInfra", "#Government", "#Healthcare", "#Finance", "#Enterprise"],
+        },
+        "keyword_mappings": {},
+        "generic_patterns": {}
+    }
+
+
+def get_tag_categories():
+    """Get the controlled tag vocabulary (auto-reloads from tags.json)."""
+    _load_tags_config()
+    # Build flat set from categories
+    categories = _tags_config.get("categories", {})
+    tags = set()
+    for tag_list in categories.values():
+        tags.update(tag_list)
+    return tags
+
+
+def get_max_tags():
+    """Get max tags per article (auto-reloads from tags.json)."""
+    _load_tags_config()
+    return _tags_config.get("max_tags_per_article", 5)
+
+
+def get_keyword_mappings():
+    """Get keyword-to-tag mappings for tag extraction."""
+    _load_tags_config()
+    return _tags_config.get("keyword_mappings", {})
+
+
+def get_generic_patterns():
+    """Get generic pattern mappings for tag extraction."""
+    _load_tags_config()
+    return _tags_config.get("generic_patterns", {})
+
+
+# Module-level getters (called at import time, then use functions)
+# For code that imports TAG_CATEGORIES, MAX_TAGS_PER_ARTICLE
+def TAG_CATEGORIES():
+    """Get the controlled tag vocabulary set."""
+    return get_tag_categories()
+
+
+def MAX_TAGS_PER_ARTICLE():
+    """Get max tags per article."""
+    return get_max_tags()
+
+
 def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
     """
-    Dynamic keyword-based tag extraction (fallback only, no AI calls).
+    Extract tags using controlled vocabulary from tags.json (keyword-based fallback).
 
-    This is used only when AI is unavailable or rate-limited.
-    Returns list of tags based on keyword matching in title and analysis.
+    Maps article content to the controlled TAG_CATEGORIES set.
+    Returns limited, standardized tags for trend tracking.
     """
     import re
     text = f"{title} {analysis}".lower()
     tags = []
 
-    # 1. CVE identifiers (priority)
-    cve_matches = re.findall(r'cve-?\d{4}-?\d{4,}', text, re.IGNORECASE)
-    for cve in set(cve_matches[:2]):  # Limit to 2 CVEs
-        tags.append(f"#{cve.upper()}")
+    valid_tags = get_tag_categories()
+    max_tags = get_max_tags()
+    keyword_mappings = get_keyword_mappings()
+    generic_patterns = get_generic_patterns()
 
-    # 2. Threat types
-    if any(kw in text for kw in ["ransomware", "encryption", "decrypt", "wiper"]):
-        tags.append("#Ransomware")
-    elif any(kw in text for kw in ["phishing", "spear phishing", "credential", "social engineering"]):
-        tags.append("#Phishing")
-    elif any(kw in text for kw in ["malware", "trojan", "backdoor", "botnet", "worm"]):
-        tags.append("#Malware")
-    elif any(kw in text for kw in ["zero.?day", "zeroday", "0day"]):
-        tags.append("#ZeroDay")
+    # 1. TTPs - from keyword mappings
+    ttp_mapping = keyword_mappings.get("TTPs", {})
+    for tag, keywords in ttp_mapping.items():
+        if any(re.search(kw, text) for kw in keywords):
+            if tag in valid_tags:
+                tags.append(tag)
 
-    # 3. Data-related threats
-    if any(kw in text for kw in ["data breach", "breach", "data leak", "exfiltration", "stolen data", "exfiltrated", "data loss"]):
-        if "#Ransomware" not in tags:  # Avoid duplicate with ransomware
-            tags.append("#DataBreach")
+    # 2. Attacker groups - from keyword mappings
+    actor_mapping = keyword_mappings.get("Threat_Actors", {})
+    for tag, keywords in actor_mapping.items():
+        if any(kw in text for kw in keywords):
+            if tag in valid_tags:
+                tags.append(tag)
+                break  # Only one attacker group tag
 
-    if any(kw in text for kw in ["supply chain", "software supply", "vendor", "dependency"]):
-        tags.append("#SupplyChain")
-
-    # 4. Attacker groups (APT, nation-state, named groups)
-    attacker_groups = {
-        "#TeamPCP": ["teampcp"],
-        "#Lazarus": ["lazarus", "north korea", "north korean", "dprk"],
-        "#Qilin": ["qilin"],
-        "#BlackCat": ["blackcat", "alphv"],
-        "#LockBit": ["lockbit"],
-        "#Clop": ["clop", "cl0p"],
-        "#Conti": ["conti"],
-        "#FancyBear": ["fancy bear", "apt28", "sofacy"],
-        "#CozyBear": ["cozy bear", "apt29", "noblebaron"],
-        "#Equation": ["equation group"],
-        "#Sandworm": ["sandworm"],
-    }
-
-    for tag, keywords in attacker_groups.items():
-        if any(kw in text for kw in keywords) and tag not in tags:
-            tags.append(tag)
-            break  # Only one attacker group tag
-
-    if not any(t.startswith("#") and t[1:3].isalpha() and t[1].isupper() for t in tags if t not in ["#APT", "#CVE"]):
-        # If no attacker group found, check for generic APT mentions
-        if any(kw in text for kw in ["apt", "advanced persistent threat", "nation.state", "nation state"]):
-            if "#APT" not in tags:
+    # Generic APT detection
+    if not any(t in tags for t in actor_mapping.keys()):
+        apt_patterns = generic_patterns.get("#APT", [])
+        if any(kw in text for kw in apt_patterns):
+            if "#APT" in valid_tags:
                 tags.append("#APT")
 
-    # 5. Impact/Vulnerability type
-    if any(kw in text for kw in ["vulnerability", "flaw", "bug", "security hole", "weakness"]):
-        if "#Vulnerability" not in tags:
-            tags.append("#Vulnerability")
+    # 3. Events & Impact - from generic patterns
+    event_tags = ["#DataBreach", "#Incident", "#Patch", "#Disclosure", "#ThreatIntel", "#Exploit"]
+    for tag_name in event_tags:
+        if tag_name in generic_patterns:
+            if any(kw in text for kw in generic_patterns[tag_name]):
+                if tag_name in valid_tags and tag_name not in tags:
+                    tags.append(tag_name)
 
-    if any(kw in text for kw in ["authentication", "auth bypass", "rce", "remote code execution", "sql injection", "xss"]):
-        tags.append("#Vulnerability")
+    # 4. CVE detection
+    cve_patterns = generic_patterns.get("#CVE", ["cve-?\\d{4}-?\\d{4,}"])
+    if any(re.search(pattern, text) for pattern in cve_patterns):
+        if "#CVE" in valid_tags:
+            tags.append("#CVE")
 
-    # 6. Sector/Target specific
-    if any(kw in text for kw in ["healthcare", "hospital", "pharmaceutical", "pharma"]):
-        tags.append("#Healthcare")
-    elif any(kw in text for kw in ["critical infrastructure", "power grid", "utility", "scada"]):
-        tags.append("#CriticalInfra")
+    # 5. Vulnerability mentions (if no CVE)
+    if "#Vulnerability" in generic_patterns:
+        if any(kw in text for kw in generic_patterns["#Vulnerability"]):
+            if "#Vulnerability" in valid_tags and "#Vulnerability" not in tags and "#CVE" not in tags:
+                tags.append("#Vulnerability")
 
-    # 7. Technology/Platform specific
-    if any(kw in text for kw in ["cloud", "aws", "azure", "gcp", "kubernetes", "container"]):
-        tags.append("#CloudSecurity")
-    elif any(kw in text for kw in ["mobile", "ios", "android", "app"]):
-        tags.append("#MobileSecurity")
+    # 6. IOCs - from generic patterns
+    ioc_tags = ["#MaliciousIP", "#MaliciousDomain", "#MaliciousHash"]
+    for tag_name in ioc_tags:
+        if tag_name in generic_patterns:
+            if any(kw in text for kw in generic_patterns[tag_name]):
+                if tag_name in valid_tags and tag_name not in tags:
+                    tags.append(tag_name)
 
-    # Remove duplicates and limit to 4 tags max
-    tags = list(dict.fromkeys(tags))[:4]
+    # 7. Targets / Sectors - from keyword mappings
+    target_mapping = keyword_mappings.get("Targets_Sectors", {})
+    for tag, keywords in target_mapping.items():
+        if any(kw in text for kw in keywords):
+            if tag in valid_tags:
+                tags.append(tag)
+
+    # Filter to controlled vocabulary only and remove duplicates
+    tags = [t for t in tags if t in valid_tags]
+    tags = list(dict.fromkeys(tags))[:max_tags]
+
     return tags
 
 
@@ -531,12 +660,12 @@ def get_trending_tags(alerts: list) -> dict:
     return trending_with_percent
 
 
-def deduplicate_alerts_with_gemini(alerts: list) -> dict:
+def deduplicate_alerts_with_ai(alerts: list) -> dict:
     """
     Deduplicate alerts using AI semantic analysis (with smart quota management).
 
     Groups semantically similar alerts together and returns primary alerts.
-    Uses Gemini only if quota available, otherwise uses keyword fallback.
+    Uses AI only if quota available, otherwise uses keyword fallback.
 
     Args:
         alerts: List of alert dictionaries with 'id', 'title', 'analysis' fields
@@ -789,34 +918,70 @@ def send_teams_notification(message: str) -> bool:
         return False
 
 
-# Global embedding model cache
+# Global embedding model cache with thread safety
 _embedding_model = None
+_embedding_model_load_failed = False
+_embedding_model_lock = threading.Lock()
 
 
 def get_embedding_model():
-    """Get or load the sentence-transformers embedding model (cached)."""
-    global _embedding_model
+    """Get or load the sentence-transformers embedding model (cached, thread-safe).
 
+    Returns:
+        SentenceTransformer model instance, or None if unavailable.
+        Logs a WARNING (not ERROR) on first failure to avoid spam.
+    """
+    global _embedding_model, _embedding_model_load_failed
+
+    # Return cached model if available
     if _embedding_model is not None:
         return _embedding_model
 
-    try:
-        from sentence_transformers import SentenceTransformer
-
-        logger.debug(f"Loading embedding model: {Config.EMBEDDING_MODEL}")
-        _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL)
-        logger.debug("Embedding model loaded successfully")
-        return _embedding_model
-
-    except ImportError:
-        logger.error("sentence-transformers not installed, semantic clustering disabled")
-        return None
-    except Exception as e:
-        logger.error(f"Error loading embedding model: {e}")
+    # If we already tried and failed, don't retry
+    if _embedding_model_load_failed:
         return None
 
+    # Thread-safe model loading
+    with _embedding_model_lock:
+        # Double-check after acquiring lock
+        if _embedding_model is not None or _embedding_model_load_failed:
+            return _embedding_model
 
-def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, threshold: float = 0.70) -> tuple:
+        # Suppress HuggingFace warnings and progress bars
+        import os
+        import logging
+        os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
+        os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+        os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+        # Suppress transformers and huggingface_hub logger warnings
+        logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            logger.info(f"Loading embedding model: {Config.EMBEDDING_MODEL}")
+            # Disable progress bars for model loading
+            _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL, progress_bar=False)
+            logger.info(f"Embedding model loaded successfully: {Config.EMBEDDING_MODEL}")
+            return _embedding_model
+
+        except ImportError:
+            _embedding_model_load_failed = True
+            logger.warning(
+                "⚠️  Semantic clustering disabled: sentence-transformers not installed.\n"
+                "     Install with: uv add sentence-transformers scikit-learn\n"
+                "     All articles will be treated as separate topics until then."
+            )
+            return None
+        except Exception as e:
+            _embedding_model_load_failed = True
+            logger.error(f"Failed to load embedding model: {e}")
+            return None
+
+
+def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, threshold: float = None) -> tuple:
     """
     Cluster article into existing topics using semantic similarity.
 
@@ -825,51 +990,64 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
     Args:
         new_article: New article dict with 'title' and 'content' keys
         existing_topics: List of existing topic dicts with 'id', 'main_title', and 'embedding' keys
-        threshold: Similarity threshold for clustering (0.0-1.0)
+        threshold: Similarity threshold for clustering (0.0-1.0). Defaults to Config.SEMANTIC_SIMILARITY_THRESHOLD
 
     Returns:
         Tuple of (is_new_topic, matched_topic_id_or_None)
         - If is_new_topic=True: new topic should be created
         - If is_new_topic=False: article should be added to matched_topic_id
     """
+    if threshold is None:
+        threshold = Config.SEMANTIC_SIMILARITY_THRESHOLD
+
     try:
         model = get_embedding_model()
         if model is None:
-            logger.warning("Embedding model unavailable, treating article as new topic")
+            logger.debug("Embedding model unavailable, treating article as new topic")
             return (True, None)
 
         from sklearn.metrics.pairwise import cosine_similarity
         import numpy as np
 
         # Generate embedding for new article
-        article_text = f"{new_article.get('title', '')} {new_article.get('content', '')}"[:500]
-        new_embedding = model.encode([article_text])[0]
+        article_text = f"{new_article.get('title', '')} {new_article.get('content', '')[:450]}"
+        logger.debug(f"Generating embedding for article: {new_article.get('title', '')[:60]}...")
+        new_embedding = model.encode([article_text], show_progress_bar=False)[0]
 
         # Find most similar topic
         best_match_id = None
-        best_similarity = 0
+        best_similarity = 0.0
 
         for topic in existing_topics:
             topic_embedding = topic.get('embedding')
             if topic_embedding is None:
                 continue
 
-            similarity = cosine_similarity([new_embedding], [topic_embedding])[0][0]
-            logger.debug(f"Similarity with topic '{topic.get('main_title')[:50]}': {similarity:.3f}")
+            # Convert to numpy array if needed
+            if not hasattr(topic_embedding, 'dot'):
+                import numpy as np
+                topic_embedding = np.array(topic_embedding)
+
+            similarity = float(cosine_similarity([new_embedding], [topic_embedding])[0][0])
 
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_match_id = topic.get('id')
+                best_topic_title = topic.get('main_title', '')[:60]
 
         # Return clustering decision
-        if best_similarity >= threshold:
-            logger.info(f"Article clustered to topic {best_match_id} (similarity: {best_similarity:.3f})")
+        if best_match_id is not None and best_similarity >= threshold:
+            logger.info(
+                f"✓ Article clustered to topic #{best_match_id} '{best_topic_title}' "
+                f"(similarity: {best_similarity:.3f} >= {threshold:.2f})"
+            )
             return (False, best_match_id)
         else:
-            logger.info(f"No matching topic found (best: {best_similarity:.3f} < threshold: {threshold})")
+            reason = "no matching topics" if best_match_id is None else f"best similarity {best_similarity:.3f} < threshold {threshold:.2f}"
+            logger.info(f"✗ New topic created ({reason})")
             return (True, None)
 
     except Exception as e:
-        logger.error(f"Error in semantic clustering: {e}")
+        logger.error(f"Error in semantic clustering: {e}", exc_info=True)
         # Treat as new topic on error
         return (True, None)

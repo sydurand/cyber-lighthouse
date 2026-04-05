@@ -161,17 +161,20 @@ class TaskQueue:
                 logger.error(f"Worker error: {e}")
 
 
-# Global task queue instance
+# Global task queue instance with thread safety
 _task_queue = None
+_queue_lock = threading.Lock()
 
 
 def get_task_queue(num_workers: int = 1, batch_delay: int = 2) -> TaskQueue:
-    """Get or create the global task queue."""
+    """Get or create the global task queue (thread-safe)."""
     global _task_queue
 
     if _task_queue is None:
-        _task_queue = TaskQueue(num_workers=num_workers, batch_delay=batch_delay)
-        _task_queue.start()
+        with _queue_lock:
+            if _task_queue is None:  # Double-check locking
+                _task_queue = TaskQueue(num_workers=num_workers, batch_delay=batch_delay)
+                _task_queue.start()
 
     return _task_queue
 

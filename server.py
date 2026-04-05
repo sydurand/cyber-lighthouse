@@ -1,6 +1,7 @@
 """FastAPI web server for Cyber-Lighthouse dashboard."""
 import os
 import sys
+from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -73,8 +74,38 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "Cyber-Lighthouse Dashboard"}
+    """Health check endpoint with real dependency verification."""
+    issues = []
+
+    # Check database connectivity
+    try:
+        from database import Database
+        db = Database()
+        db.get_all_articles()
+    except Exception as e:
+        issues.append(f"Database error: {str(e)}")
+
+    # Check cache accessibility
+    try:
+        from cache import get_cache
+        cache = get_cache()
+        cache.get_stats()
+    except Exception as e:
+        issues.append(f"Cache error: {str(e)}")
+
+    # Determine overall status
+    status = "healthy" if not issues else "degraded"
+
+    return {
+        "status": status,
+        "service": "Cyber-Lighthouse Dashboard",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {
+            "database": "ok" if not any("Database" in i for i in issues) else "error",
+            "cache": "ok" if not any("Cache" in i for i in issues) else "error",
+        },
+        "issues": issues
+    }
 
 
 def main():

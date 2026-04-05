@@ -1,4 +1,37 @@
-/* Cyber-Lighthouse Dashboard - Tailwind Enhancements */
+/* Cyber-Lighthouse Dashboard - Enhanced Styles */
+
+/* Theme Variables */
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --border-color: #334155;
+}
+
+html.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #e2e8f0;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-color: #cbd5e1;
+}
+
+html.light-theme body {
+  @apply bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 text-slate-900;
+}
+
+html.light-theme .bg-gradient-to-br {
+  @apply from-slate-50 to-slate-100;
+}
+
+html.light-theme nav {
+  @apply from-slate-100 to-slate-50 border-slate-300;
+}
+
+html.light-theme button {
+  @apply text-slate-900;
+}
 
 /* Smooth animations */
 @keyframes slideIn {
@@ -9,6 +42,17 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -30,14 +74,14 @@
   }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* Apply animations */
 [v-cloak] {
   display: initial;
-}
-
-/* Hide cloak content once Vue is ready */
-[v-cloak] > *:not(.flex) {
-  display: none;
 }
 
 body {
@@ -68,12 +112,33 @@ html {
   background: #64748b;
 }
 
-/* Enhance card animations */
+/* Transitions */
+* {
+  @apply transition-all duration-200;
+}
+
+/* Card animations */
 .group {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Glow effects on hover */
+/* Alert/Article/Report animations */
+.alert-item,
+.article-item,
+.report-item {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Toast animations */
+.toast-enter-active {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.toast-leave-active {
+  animation: slideInRight 0.3s ease-in reverse;
+}
+
+/* Glow effects */
 .shadow-glow {
   box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
 }
@@ -86,11 +151,6 @@ html {
   background-clip: text;
 }
 
-/* Smooth transitions */
-* {
-  @apply transition-all duration-200;
-}
-
 /* Input focus states */
 input:focus,
 select:focus,
@@ -101,13 +161,6 @@ textarea:focus {
 /* Chart container */
 canvas {
   @apply max-w-full h-auto;
-}
-
-/* Alert animation */
-.alert-item,
-.article-item,
-.report-item {
-  animation: slideIn 0.3s ease-out;
 }
 
 /* Badge styles */
@@ -132,39 +185,14 @@ button {
   display: inline-block;
 }
 
+/* Pulse animation for notifications */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Backdrop blur support */
 .backdrop-blur-md {
   backdrop-filter: blur(12px);
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .text-xl {
-    @apply text-lg;
-  }
-
-  .gap-6 {
-    @apply gap-4;
-  }
-
-  .p-6 {
-    @apply p-4;
-  }
-}
-
-/* Dark mode text readability */
-.text-slate-300 {
-  @apply font-light;
-}
-
-/* Enhanced gradient backgrounds */
-.bg-gradient-to-br {
-  @apply relative;
-}
-
-/* Card shadow enhancement */
-.shadow-xl {
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
 }
 
 /* Hover lift effect */
@@ -198,6 +226,7 @@ h1, h2, h3, h4, h5, h6 {
 input[type="text"],
 input[type="email"],
 input[type="search"],
+input[type="date"],
 select {
   @apply appearance-none;
 }
@@ -222,11 +251,6 @@ button {
   @apply align-middle;
 }
 
-/* Remove default button styles */
-button {
-  @apply font-medium;
-}
-
 /* Disabled state */
 :disabled {
   @apply opacity-50 cursor-not-allowed;
@@ -242,10 +266,23 @@ img {
   @apply max-w-full h-auto;
 }
 
-/* Mobile-first spacing */
-@media (max-width: 640px) {
-  .hidden {
-    @apply not-sr-only;
+/* Keyboard shortcut styling */
+kbd {
+  @apply px-2 py-1 bg-slate-700 rounded text-sm font-mono;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .text-xl {
+    @apply text-lg;
+  }
+
+  .gap-6 {
+    @apply gap-4;
+  }
+
+  .p-6 {
+    @apply p-4;
   }
 
   .sm\:inline {
@@ -269,6 +306,7 @@ img {
   margin-top: 0.75rem;
   margin-bottom: 0.5rem;
   color: #f1f5f9;
+  scroll-margin-top: 80px;
 }
 
 .markdown-content h1 {
@@ -378,6 +416,23 @@ img {
   color: #93c5fd;
 }
 
+/* Skeleton loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
+}
+
 /* Print styles */
 @media print {
   .no-print {
@@ -387,4 +442,248 @@ img {
   body {
     @apply bg-white text-black;
   }
+}
+
+
+/* ============================================
+   PROFESSIONAL REPORT STYLING
+   ============================================ */
+
+/* ============================================
+   PROFESSIONAL REPORT STYLING - ENHANCED
+   ============================================ */
+
+.report-content {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #e2e8f0;
+}
+
+/* ============================================
+   MAIN TITLE (H1)
+   ============================================ */
+.report-content h1 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 3.5rem 0;
+  padding: 0 0 1.5rem 0;
+  border-bottom: 4px solid #3b82f6;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  text-align: center;
+}
+
+/* ============================================
+   SECTION HEADERS (H2) - Major Parts
+   ============================================ */
+.report-content h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin: 4rem 0 2rem 0;
+  padding: 0 0 1rem 0;
+  border-bottom: 3px solid rgba(96, 165, 250, 0.35);
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.report-content h2:first-of-type {
+  margin-top: 2rem;
+}
+
+/* ============================================
+   SUBSECTION HEADERS (H3) - Categories
+   ============================================ */
+.report-content h3 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #38bdf8;
+  margin: 2.5rem 0 1.25rem 1.5rem;
+  padding: 0.75rem 0 0.75rem 1.25rem;
+  border-left: 4px solid #0ea5e9;
+  background: linear-gradient(90deg, rgba(14, 165, 233, 0.08) 0%, transparent 100%);
+  border-radius: 0 0.375rem 0.375rem 0;
+  line-height: 1.3;
+}
+
+/* ============================================
+   SUB-SUBSECTION HEADERS (H4) - Items
+   ============================================ */
+.report-content h4 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #7dd3fc;
+  margin: 2rem 0 1rem 2.5rem;
+  padding: 0.5rem 0 0.5rem 1rem;
+  border-left: 3px solid rgba(125, 211, 252, 0.4);
+  line-height: 1.35;
+}
+
+/* ============================================
+   PARAGRAPHS
+   ============================================ */
+.report-content p {
+  margin-bottom: 1.5rem;
+  line-height: 1.85;
+  color: #cbd5e1;
+  font-size: 15px;
+}
+
+/* Paragraphs under H3 - indented */
+.report-content h3 + p {
+  margin-left: 2.75rem;
+}
+
+/* Paragraphs under H4 - more indented */
+.report-content h4 + p {
+  margin-left: 3.5rem;
+}
+
+/* ============================================
+   UNORDERED LISTS - Level 1
+   ============================================ */
+.report-content > ul {
+  margin: 1.5rem 0 2.5rem 2rem;
+  padding: 0;
+  list-style: none;
+}
+
+.report-content > ul > li {
+  margin-bottom: 1rem;
+  line-height: 1.75;
+  color: #cbd5e1;
+  font-size: 15px;
+  padding: 0.5rem 0 0.5rem 1.75rem;
+  position: relative;
+}
+
+.report-content > ul > li::before {
+  content: "•";
+  position: absolute;
+  left: 0.5rem;
+  color: #60a5fa;
+  font-weight: bold;
+  font-size: 1.2rem;
+  line-height: 1.5;
+}
+
+/* ============================================
+   NESTED LISTS - Level 2
+   ============================================ */
+.report-content ul ul {
+  margin: 0.75rem 0 1rem 1.5rem;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid rgba(56, 189, 248, 0.2);
+  padding-left: 1.25rem;
+}
+
+.report-content ul ul li {
+  margin-bottom: 0.65rem;
+  line-height: 1.7;
+  color: #94a3b8;
+  font-size: 14.5px;
+  padding: 0.35rem 0 0.35rem 1.5rem;
+  position: relative;
+}
+
+.report-content ul ul li::before {
+  content: "–";
+  position: absolute;
+  left: 0.25rem;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* ============================================
+   TRIPLE NESTED LISTS - Level 3
+   ============================================ */
+.report-content ul ul ul {
+  margin: 0.5rem 0 0.75rem 1rem;
+  padding-left: 1rem;
+  border-left: 2px solid rgba(125, 211, 252, 0.15);
+}
+
+.report-content ul ul ul li {
+  margin-bottom: 0.5rem;
+  line-height: 1.65;
+  color: #64748b;
+  font-size: 14px;
+  padding: 0.25rem 0 0.25rem 1.25rem;
+}
+
+.report-content ul ul ul li::before {
+  content: "◦";
+  left: 0.15rem;
+  color: #7dd3fc;
+  font-size: 1.1rem;
+}
+
+/* ============================================
+   BOLD & ITALIC TEXT
+   ============================================ */
+.report-content strong {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.report-content em {
+  font-style: italic;
+  color: #94a3b8;
+}
+
+/* Bold in lists stands out more */
+.report-content ul li strong {
+  color: #e2e8f0;
+}
+
+/* ============================================
+   INLINE CODE & CVE
+   ============================================ */
+.report-content code {
+  background-color: rgba(15, 23, 42, 0.8);
+  color: #34d399;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.3rem;
+  font-family: 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 0.875rem;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  font-weight: 500;
+}
+
+/* ============================================
+   HORIZONTAL RULES
+   ============================================ */
+.report-content hr {
+  border: none;
+  border-top: 2px solid rgba(100, 116, 139, 0.35);
+  margin: 3.5rem 0;
+}
+
+/* ============================================
+   LINKS
+   ============================================ */
+.report-content a {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+
+.report-content a:hover {
+  color: #93c5fd;
+}
+
+/* ============================================
+   SPACING HELPERS
+   ============================================ */
+.report-content > *:first-child {
+  margin-top: 0;
+}
+
+.report-content > *:last-child {
+  margin-bottom: 0;
 }

@@ -15,6 +15,7 @@ class ArticleResponse(BaseModel):
     date: str
     analysis: Optional[str] = None
     processed_for_daily: bool
+    severity: str = Field(default="medium", description="Alert severity level")
 
     class Config:
         from_attributes = True
@@ -31,9 +32,22 @@ class AlertResponse(BaseModel):
     analysis: Optional[str] = None
     tags: List[str] = Field(default_factory=list, description="Security tags extracted from alert")
     timestamp: datetime = Field(default_factory=datetime.now)
+    severity: str = Field(default="medium", description="Alert severity level")
 
     class Config:
         from_attributes = True
+
+
+class BookmarkResponse(BaseModel):
+    """Response model for bookmarked alerts."""
+
+    id: int
+    title: str
+    source: str
+    date: str
+    link: str
+    severity: str
+    bookmarked_at: datetime = Field(default_factory=datetime.now)
 
 
 class ReportResponse(BaseModel):
@@ -44,6 +58,22 @@ class ReportResponse(BaseModel):
     articles_count: int
     generated_date: str
     timestamp: datetime = Field(default_factory=datetime.now)
+    report_id: str = Field(default="", description="Cache key for download")
+
+
+class ReportTOCItem(BaseModel):
+    """Table of contents item for reports."""
+
+    level: int
+    text: str
+    anchor: str
+
+
+class ReportWithTOC(BaseModel):
+    """Report with generated table of contents."""
+
+    report: ReportResponse
+    table_of_contents: List[ReportTOCItem] = Field(default_factory=list)
 
 
 class StatisticsResponse(BaseModel):
@@ -140,3 +170,50 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
+
+
+class ExportResponse(BaseModel):
+    """Response model for exported data."""
+
+    content: str
+    filename: str
+    format: str  # markdown, csv, pdf
+
+
+class SeverityUpdate(BaseModel):
+    """Request to manually update alert severity."""
+
+    severity: str  # critical, high, medium, low
+
+
+class BookmarkToggle(BaseModel):
+    """Request to toggle bookmark."""
+
+    alert_id: int
+
+
+class TagSuggestionResponse(BaseModel):
+    """Response model for a suggested tag."""
+
+    id: int
+    tag: str
+    category: Optional[str] = None
+    first_seen: str
+    last_seen: str
+    article_count: int
+    sample_articles: List[str] = Field(default_factory=list)
+    article_ids: List[int] = Field(default_factory=list, description="Article IDs that suggested this tag")
+    status: str = "pending"
+
+
+class TagSuggestionsListResponse(BaseModel):
+    """Response model for list of suggested tags."""
+
+    suggestions: List[TagSuggestionResponse]
+    total_count: int
+
+
+class TagApprovalRequest(BaseModel):
+    """Request to approve a suggested tag."""
+
+    category: Optional[str] = Field(None, description="Category to assign the tag to (e.g., 'Threat_Actors')")

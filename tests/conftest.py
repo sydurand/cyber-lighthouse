@@ -31,7 +31,7 @@ def mock_config(monkeypatch, temp_db):
         mock_cfg.TEAMS_WEBHOOK_URL = "https://outlook.webhook.office.com/webhookb2/test"
         mock_cfg.GEMINI_MODEL = "gemini-2.5-flash"
         mock_cfg.TRAFILATURA_TIMEOUT = 30
-        mock_cfg.SEMANTIC_SIMILARITY_THRESHOLD = 0.70
+        mock_cfg.SEMANTIC_SIMILARITY_THRESHOLD = 0.65
         mock_cfg.MIN_CONTENT_LENGTH_FOR_SCRAPING = 300
         mock_cfg.API_DELAY_BETWEEN_REQUESTS = 5
         mock_cfg.EMBEDDING_MODEL = "all-MiniLM-L6-v2"

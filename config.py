@@ -26,7 +26,8 @@ class Config:
     # RSS Feeds
     RSS_FEEDS = {
         "BleepingComputer": "https://www.bleepingcomputer.com/feed/",
-        "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml"
+        "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml",
+        "DarkReading": "https://www.darkreading.com/rss.xml"
     }
 
     # CISA Feed
@@ -54,7 +55,11 @@ class Config:
     # Web scraping and semantic clustering
     TRAFILATURA_TIMEOUT = int(os.getenv("TRAFILATURA_TIMEOUT", "30"))
     TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "")
-    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.70"))
+    # Similarity threshold for clustering (0.0-1.0):
+    # - Lower (0.60-0.65): More aggressive clustering, articles grouped more easily
+    # - Higher (0.75-0.80): Stricter, only very similar articles grouped
+    # - Default 0.65: Balanced approach for cybersecurity articles
+    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.65"))
     MIN_CONTENT_LENGTH_FOR_SCRAPING = int(os.getenv("MIN_CONTENT_LENGTH_FOR_SCRAPING", "300"))
     API_DELAY_BETWEEN_REQUESTS = int(os.getenv("API_DELAY_BETWEEN_REQUESTS", "5"))
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")

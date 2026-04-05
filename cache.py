@@ -1,5 +1,5 @@
 """
-Caching system for Gemini API responses.
+Caching system for AI API responses.
 
 Reduces API calls by caching analysis and synthesis results.
 Uses content hashing to detect similar articles.
@@ -13,7 +13,7 @@ from config import Config
 
 
 class ResponseCache:
-    """Cache for Gemini API responses to reduce API calls."""
+    """Cache for AI API responses to reduce API calls."""
 
     def __init__(self, cache_file: str = "cache/gemini_responses.json"):
         """Initialize cache."""
@@ -36,12 +36,23 @@ class ResponseCache:
             self.cache = {}
 
     def _save_cache(self):
-        """Save cache to file."""
+        """Save cache to file atomically (write to .tmp then rename)."""
         try:
-            with open(self.cache_file, "w", encoding="utf-8") as f:
+            tmp_file = f"{self.cache_file}.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, indent=2, ensure_ascii=False)
+            # Atomic rename
+            import os
+            os.replace(tmp_file, self.cache_file)
         except Exception as e:
             logger.error(f"Failed to save cache: {e}")
+            # Clean up tmp file on error
+            import os
+            try:
+                if os.path.exists(f"{self.cache_file}.tmp"):
+                    os.remove(f"{self.cache_file}.tmp")
+            except Exception:
+                pass
 
     @staticmethod
     def _hash_content(title: str, content: str) -> str:
@@ -87,7 +98,7 @@ class ResponseCache:
         Args:
             title: Article title
             content: Article content
-            response: Gemini response text
+            response: AI response text
         """
         cache_key = self._hash_content(title, content)
         self.cache[cache_key] = {
@@ -128,18 +139,24 @@ class ResponseCache:
         logger.debug(f"Synthesis cache hit (age: {age_hours:.1f}h)")
         return entry["response"]
 
-    def set_synthesis(self, articles_hash: str, response: str):
+    def set_synthesis(self, articles_hash: str, response: str, articles_count: int = 0):
         """
         Cache synthesis report.
 
         Args:
             articles_hash: Hash of article IDs
             response: Synthesis report text
+            articles_count: Number of articles in the synthesis
         """
         cache_key = f"synthesis:{articles_hash}"
         self.cache[cache_key] = {
+            "type": "synthesis",
+            "content": response,
+            "articles_count": articles_count,
+            "generated_date": datetime.now().strftime("%Y-%m-%d"),
+            "timestamp": datetime.now().isoformat(),
             "created_at": datetime.now().isoformat(),
-            "response": response
+            "response": response  # Keep for backward compatibility
         }
         self._save_cache()
         logger.debug(f"Cached synthesis report")
@@ -174,7 +191,7 @@ class ResponseCache:
         try:
             cache_size_bytes = Path(self.cache_file).stat().st_size if Path(self.cache_file).exists() else 0
             cache_size_mb = cache_size_bytes / (1024 * 1024)
-        except:
+        except Exception:
             cache_size_mb = 0
 
         return {

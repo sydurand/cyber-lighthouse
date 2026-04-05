@@ -1,11 +1,13 @@
 """API routes for the web dashboard."""
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 import json
 import os
 import hashlib
+import io
 
 from database import Database
 from cache import get_cache
@@ -13,10 +15,12 @@ from optimization import get_call_counter
 from logging_config import logger
 from utils import (
     detect_similar_articles,
-    deduplicate_alerts_with_gemini,
+    deduplicate_alerts_with_ai,
     is_relevant_security_article,
-    extract_tags_with_gemini,
+    extract_tags_with_ai,
     get_trending_tags,
+    get_tag_categories,
+    get_max_tags,
 )
 from export_utils import (
     detect_severity,
@@ -41,6 +45,9 @@ from .models import (
     FilterStats,
     BookmarkResponse,
     ExportResponse,
+    TagSuggestionResponse,
+    TagSuggestionsListResponse,
+    TagApprovalRequest,
 )
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -59,6 +66,8 @@ async def get_alerts(
     limit: int = Query(20, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     deduplicate: bool = Query(False, description="Deduplicate similar alerts using AI"),
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
 ) -> AlertsListResponse:
     """
     Get latest articles (real-time alerts).
@@ -67,6 +76,8 @@ async def get_alerts(
         limit: Number of alerts to return (max 10000)
         offset: Number of alerts to skip
         deduplicate: If True, use AI to identify and deduplicate similar alerts
+        date_from: Start date filter (YYYY-MM-DD)
+        date_to: End date filter (YYYY-MM-DD)
 
     Returns:
         List of recent articles with their analysis and tags
@@ -80,6 +91,13 @@ async def get_alerts(
         articles_sorted = sorted(
             articles, key=lambda x: x.get("date", ""), reverse=True
         )
+
+        # Apply date filters
+        if date_from:
+            articles_sorted = [a for a in articles_sorted if a.get("date", "") >= date_from]
+        
+        if date_to:
+            articles_sorted = [a for a in articles_sorted if a.get("date", "") <= date_to]
 
         # Build alert objects with analysis, filtering out non-relevant content
         all_alerts = []
@@ -102,17 +120,23 @@ async def get_alerts(
             if not display_analysis:
                 display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
-            # Try to get tags from cache first
-            tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
-            tags = _tag_cache.get(tags_cache_key, None)
+            # Try to get tags from database first (persistent storage)
+            article_id = article.get("id", 0)
+            tags = db.get_article_tags(article_id)
 
-            # If not in cache, use fast keyword-based extraction as fallback
-            if tags is None:
-                from utils import _extract_tags_from_keywords_dynamic
-                tags = _extract_tags_from_keywords_dynamic(title, display_analysis)
-                # Cache the keyword-extracted tags for future requests
-                if tags:
-                    _tag_cache[tags_cache_key] = tags
+            # If not in DB, try cache then extraction
+            if not tags:
+                tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+                tags = _tag_cache.get(tags_cache_key, None)
+
+                # If not in cache, use fast keyword-based extraction as fallback
+                if not tags:
+                    from utils import _extract_tags_from_keywords_dynamic
+                    tags = _extract_tags_from_keywords_dynamic(title, display_analysis)
+                    # Cache and save to DB for future requests
+                    if tags:
+                        _tag_cache[tags_cache_key] = tags
+                        db.set_article_tags(article_id, tags)
 
             alert = AlertResponse(
                 id=article.get("id", 0),
@@ -144,7 +168,7 @@ async def get_alerts(
                 }
                 for a in all_alerts
             ]
-            dedup_result = deduplicate_alerts_with_gemini(alerts_dict)
+            dedup_result = deduplicate_alerts_with_ai(alerts_dict)
             primary_alert_ids = set(dedup_result["groups"].values())
             dedup_count = len(all_alerts) - len(primary_alert_ids)
             all_alerts = [a for a in all_alerts if a.id in primary_alert_ids]
@@ -181,12 +205,7 @@ async def get_alerts(
 
     except Exception as e:
         logger.error(f"Error in get_alerts: {e}", exc_info=True)
-        return AlertsListResponse(
-            alerts=[],
-            total_count=0,
-            limit=limit,
-            offset=offset,
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/reports", response_model=ReportsListResponse)
@@ -246,8 +265,8 @@ async def get_reports(
         return ReportsListResponse(reports=reports, total_count=len(reports))
 
     except Exception as e:
-        logger.error(f"Error fetching reports: {e}")
-        return ReportsListResponse(reports=[], total_count=0)
+        logger.error(f"Error fetching reports: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/stats", response_model=StatisticsResponse)
@@ -312,20 +331,8 @@ async def get_statistics() -> StatisticsResponse:
         )
 
     except Exception as e:
-        # Return empty statistics on error
-        return StatisticsResponse(
-            total_articles=0,
-            articles_today=0,
-            articles_this_week=0,
-            sources_count=0,
-            articles_by_source={},
-            articles_by_date={},
-            processed_articles=0,
-            unprocessed_articles=0,
-            cache_hit_rate=0.0,
-            api_calls_made=0,
-            api_calls_saved=0,
-        )
+        logger.error(f"Error fetching statistics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/articles", response_model=ArticlesListResponse)
@@ -409,7 +416,8 @@ async def search_articles(
         )
 
     except Exception as e:
-        return ArticlesListResponse(articles=[], total_count=0, limit=limit, offset=offset)
+        logger.error(f"Error searching articles: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/system", response_model=SystemStatusResponse)
@@ -435,8 +443,9 @@ async def get_system_status() -> SystemStatusResponse:
         if os.path.exists(cache_file):
             cache_size_mb = os.path.getsize(cache_file) / (1024 * 1024)
 
-        # Calculate remaining quota
-        api_calls_remaining = 5 - call_stats.get("calls_this_minute", 0)
+        # Calculate remaining quota (use actual rate limit from optimization)
+        rate_limit = call_stats.get("rate_limit_per_minute", 10)
+        api_calls_remaining = rate_limit - call_stats.get("calls_this_minute", 0)
         if api_calls_remaining < 0:
             api_calls_remaining = 0
 
@@ -464,28 +473,13 @@ async def get_system_status() -> SystemStatusResponse:
                 disk_usage_mb=cache_size_mb,
             ),
             api_quota_remaining=api_calls_remaining,
-            api_quota_total=5,
+            api_quota_total=rate_limit,
             api_quota_reset_in_seconds=60,
         )
 
     except Exception as e:
-        return SystemStatusResponse(
-            status="error",
-            uptime_seconds=0,
-            last_update=datetime.now().isoformat(),
-            database_size_mb=0,
-            cache=CacheStatsResponse(
-                total_entries=0,
-                analysis_cache_size=0,
-                synthesis_cache_size=0,
-                oldest_entry_age_days=0,
-                cache_hit_rate=0.0,
-                disk_usage_mb=0,
-            ),
-            api_quota_remaining=0,
-            api_quota_total=5,
-            api_quota_reset_in_seconds=60,
-        )
+        logger.error(f"Error fetching system status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/bookmarks", response_model=List[BookmarkResponse])
@@ -494,8 +488,269 @@ async def get_bookmarks() -> List[BookmarkResponse]:
     try:
         return list(bookmarks_db.values())
     except Exception as e:
-        logger.error(f"Error fetching bookmarks: {e}")
-        return []
+        logger.error(f"Error fetching bookmarks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/alerts/{alert_id}", response_model=AlertResponse)
+async def get_alert(alert_id: int) -> AlertResponse:
+    """Get a single alert by ID."""
+    try:
+        articles = db.get_all_articles()
+        article = next((a for a in articles if a.get("id") == alert_id), None)
+
+        if not article:
+            raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+
+        title = article.get("title", "")
+        content = article.get("content", "")
+        display_analysis = article.get("analysis", "") or cache.get_analysis(title, content)
+
+        if not display_analysis:
+            display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
+
+        # Get tags
+        tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+        from utils import _tag_cache
+        tags = _tag_cache.get(tags_cache_key, [])
+
+        if not tags:
+            from utils import _extract_tags_from_keywords_dynamic
+            tags = _extract_tags_from_keywords_dynamic(title, display_analysis or "", tags)
+            if tags:
+                _tag_cache[tags_cache_key] = tags
+
+        return AlertResponse(
+            id=article.get("id", 0),
+            source=article.get("source", "Unknown"),
+            title=title,
+            link=article.get("link", ""),
+            date=article.get("date", ""),
+            analysis=display_analysis,
+            tags=tags,
+            severity=detect_severity(title, display_analysis or "", tags),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching alert {alert_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/topics")
+async def get_topics() -> JSONResponse:
+    """Get all topic clusters with article counts."""
+    try:
+        topics = db.get_all_topics_with_embeddings(processed_only=False)
+
+        result = []
+        for topic in topics:
+            # Get article count for this topic
+            articles = db.get_topic_linked_articles(topic["id"])
+            topic_data = {
+                "id": topic["id"],
+                "title": topic["main_title"],
+                "created_at": topic["created_at"],
+                "processed": topic["processed_for_summary"],
+                "article_count": len(articles),
+            }
+            result.append(topic_data)
+
+        return JSONResponse(content={"topics": result, "total": len(result)})
+    except Exception as e:
+        logger.error(f"Error fetching topics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/tags")
+async def get_available_tags() -> JSONResponse:
+    """Get the controlled tag vocabulary with categories."""
+    tag_categories = get_tag_categories()
+    max_tags = get_max_tags()
+    tag_taxonomy = {
+        "controlled_vocabulary": sorted(tag_categories),
+        "max_tags_per_article": max_tags,
+        "categories": {
+            "TTPs": ["#Ransomware", "#Phishing", "#Malware", "#ZeroDay", "#SupplyChain",
+                     "#Exfiltration", "#PrivilegeEscalation", "#Persistence", "#LateralMovement",
+                     "#SocialEngineering"],
+            "Threat_Actors": ["#APT", "#Lazarus", "#BlackCat", "#LockBit", "#Qilin",
+                             "#TeamPCP", "#Sandworm", "#FancyBear", "#CozyBear", "#Clop"],
+            "CVEs_Vulnerabilities": ["#CVE", "#Vulnerability", "#Exploit"],
+            "IOCs": ["#MaliciousIP", "#MaliciousDomain", "#MaliciousHash"],
+            "Events_Impact": ["#DataBreach", "#Incident", "#Patch", "#Disclosure", "#ThreatIntel"],
+            "Targets_Sectors": ["#CriticalInfra", "#Government", "#Healthcare", "#Finance", "#Enterprise"],
+        }
+    }
+    return JSONResponse(content=tag_taxonomy)
+
+
+@router.get("/tags/suggestions", response_model=TagSuggestionsListResponse)
+async def get_tag_suggestions(
+    status: str = Query("pending", pattern="^(pending|approved|rejected)$")
+) -> TagSuggestionsListResponse:
+    """Get AI-suggested tags that are not in the controlled vocabulary."""
+    try:
+        suggestions = db.get_suggested_tags(status=status)
+
+        result = []
+        for s in suggestions:
+            result.append(TagSuggestionResponse(
+                id=s["id"],
+                tag=s["tag"],
+                category=s.get("category"),
+                first_seen=s.get("first_seen", ""),
+                last_seen=s.get("last_seen", ""),
+                article_count=s.get("article_count", 0),
+                sample_articles=s.get("sample_articles", []),
+                article_ids=s.get("article_ids", []),
+                status=s.get("status", "pending"),
+            ))
+
+        return TagSuggestionsListResponse(
+            suggestions=result,
+            total_count=len(result)
+        )
+    except Exception as e:
+        logger.error(f"Error fetching tag suggestions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/tags/suggestions/{suggestion_id}/approve")
+async def approve_tag(suggestion_id: int, request: TagApprovalRequest = None) -> JSONResponse:
+    """
+    Approve a suggested tag and add it to the controlled vocabulary in tags.json.
+    The tag will be available immediately after approval.
+    Retroactively updates all articles that suggested this tag.
+    """
+    try:
+        category = request.category if request else None
+
+        # Get the tag before approving
+        suggestions = db.get_suggested_tags(status="pending")
+        suggestion = next((s for s in suggestions if s["id"] == suggestion_id), None)
+
+        if not suggestion:
+            raise HTTPException(status_code=404, detail="Suggestion not found")
+
+        tag_name = suggestion["tag"]
+        article_ids = suggestion.get("article_ids", [])
+
+        # Retroactively update articles with the new tag
+        articles_updated = 0
+        if article_ids:
+            articles_updated = db.add_tag_to_articles(article_ids, tag_name)
+            # Update in-memory cache for immediate API response
+            from utils import _tag_cache
+            for aid in article_ids:
+                # Get updated tags from DB and update cache
+                updated_tags = db.get_article_tags(aid)
+                if updated_tags:
+                    # Find cache key by article title (reverse lookup)
+                    articles = db.get_all_articles()
+                    article = next((a for a in articles if a.get("id") == aid), None)
+                    if article:
+                        cache_key = hashlib.sha256(f"tags:{article.get('title', '')}".encode()).hexdigest()
+                        _tag_cache[cache_key] = updated_tags
+
+        # Approve in database
+        success = db.approve_tag(suggestion_id, category)
+        if not success:
+            raise HTTPException(status_code=404, detail="Failed to approve tag")
+
+        # Add to tags.json
+        from utils import _load_tags_config, _tags_config
+        _load_tags_config()
+
+        if _tags_config is None:
+            raise HTTPException(status_code=500, detail="Tags configuration not loaded")
+
+        # Determine category if not specified
+        if not category:
+            category = suggestion.get("category") or "Emerging_Threats"
+
+        # Add tag to the appropriate category in tags.json
+        if "categories" not in _tags_config:
+            _tags_config["categories"] = {}
+
+        if category not in _tags_config["categories"]:
+            _tags_config["categories"][category] = []
+
+        if tag_name not in _tags_config["categories"][category]:
+            _tags_config["categories"][category].append(tag_name)
+
+            # Save tags.json
+            import os
+            import json
+            tags_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tags.json")
+            with open(tags_file, "w", encoding="utf-8") as f:
+                json.dump(_tags_config, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"Tag {tag_name} approved and added to {category} in tags.json")
+            return JSONResponse(content={
+                "message": f"Tag {tag_name} approved and added to {category}",
+                "tag": tag_name,
+                "category": category,
+                "articles_retroactively_updated": articles_updated
+            })
+        else:
+            return JSONResponse(content={
+                "message": f"Tag {tag_name} already exists in {category}",
+                "tag": tag_name,
+                "category": category
+            })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error approving tag: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/tags/suggestions/{suggestion_id}/reject")
+async def reject_tag(suggestion_id: int) -> JSONResponse:
+    """Reject a suggested tag."""
+    try:
+        success = db.reject_tag(suggestion_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Suggestion not found")
+        return JSONResponse(content={"message": "Tag rejected"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting tag: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.delete("/tags/suggestions/{suggestion_id}")
+async def delete_tag_suggestion(suggestion_id: int) -> JSONResponse:
+    """Delete a tag suggestion entirely."""
+    try:
+        success = db.delete_suggested_tag(suggestion_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Suggestion not found")
+        return JSONResponse(content={"message": "Tag suggestion deleted"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting tag suggestion: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.delete("/bookmarks/{alert_id}")
+async def delete_bookmark(alert_id: int) -> JSONResponse:
+    """Delete a bookmark by alert ID."""
+    try:
+        if alert_id in bookmarks_db:
+            del bookmarks_db[alert_id]
+            return JSONResponse(content={"message": "Bookmark deleted"})
+        else:
+            raise HTTPException(status_code=404, detail="Bookmark not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting bookmark {alert_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/bookmarks/toggle")
@@ -567,11 +822,11 @@ async def get_report_toc(report_index: int) -> ReportWithTOC:
 
 @router.get("/export/alerts")
 async def export_alerts(format: str = Query("markdown", pattern="^(markdown|csv)$"), limit: int = Query(100, ge=1, le=1000)):
-    """Export alerts to markdown or CSV."""
+    """Export alerts to markdown or CSV as a downloadable file."""
     try:
         articles = db.get_all_articles()
         articles_sorted = sorted(articles, key=lambda x: x.get("date", ""), reverse=True)[:limit]
-        
+
         alerts_data = []
         for article in articles_sorted:
             title = article.get("title", "")
@@ -593,35 +848,36 @@ async def export_alerts(format: str = Query("markdown", pattern="^(markdown|csv)
                 'tags': tags,
                 'severity': severity
             })
-        
+
         if format == "csv":
             content = export_alerts_to_csv(alerts_data)
             filename = f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            media_type = "text/csv"
         else:
             content = export_alerts_to_markdown(alerts_data)
             filename = f"alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-        
-        return {
-            "content": content,
-            "filename": filename,
-            "format": format,
-            "count": len(alerts_data)
-        }
+            media_type = "text/markdown"
+
+        return StreamingResponse(
+            io.BytesIO(content.encode("utf-8")),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
     except Exception as e:
-        logger.error(f"Error exporting alerts: {e}")
-        return {"error": str(e)}
+        logger.error(f"Error exporting alerts: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/export/report/{report_index}")
 async def export_report(report_index: int, format: str = Query("markdown", pattern="^(markdown)$")):
-    """Export a specific report."""
+    """Export a specific report as a downloadable file."""
     try:
         import json
         from pathlib import Path
 
         cache_file = Path("cache/gemini_responses.json")
         if not cache_file.exists():
-            return {"error": "No reports available"}
+            raise HTTPException(status_code=404, detail="No reports available")
 
         with open(cache_file, 'r') as f:
             cache_data = json.load(f)
@@ -630,27 +886,31 @@ async def export_report(report_index: int, format: str = Query("markdown", patte
             (key, entry) for key, entry in cache_data.items()
             if entry.get('type') == 'synthesis'
         ]
-        
+
         if report_index >= len(synthesis_reports):
-            return {"error": "Report not found"}
-        
+            raise HTTPException(status_code=404, detail="Report not found")
+
         key, entry = synthesis_reports[report_index]
         content = entry.get('content', '')
         date = entry.get('generated_date', 'unknown')
-        
+
         if format == "markdown":
             export_content = export_report_to_markdown(content, date)
             filename = f"report_{date}.md"
+            media_type = "text/markdown"
         else:
             export_content = content
             filename = f"report_{date}.txt"
-        
-        return {
-            "content": export_content,
-            "filename": filename,
-            "format": format
-        }
+            media_type = "text/plain"
+
+        return StreamingResponse(
+            io.BytesIO(export_content.encode("utf-8")),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error exporting report: {e}")
-        return {"error": str(e)}
+        logger.error(f"Error exporting report: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
