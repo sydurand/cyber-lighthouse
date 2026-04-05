@@ -1,10 +1,14 @@
 """Utility functions for Cyber-Lighthouse."""
+import os
 import time
 import hashlib
 import threading
 from functools import wraps
 from logging_config import logger
 from config import Config
+
+# Disable HuggingFace implicit token before any HF imports
+os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 
 # Cache for relevance checks and tags to avoid repeated API calls
 _relevance_cache = {}

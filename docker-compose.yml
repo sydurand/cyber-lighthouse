@@ -6,12 +6,18 @@ services:
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "7883:8000"
+    environment:
+      - TZ=Europe/Paris
+      - DATABASE_FILE=/app/data/articles.db
+      - JSON_DATABASE_FILE=/app/data/base_veille.json
+      - HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+    user: "1000:1000"
     volumes:
-      - data:/app
-      - cache:/app/cache
-      - logs:/app/logs
-      - reports:/app/reports
+      - ./data:/app/data
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      - ./reports:/app/reports
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
@@ -28,9 +34,3 @@ services:
         limits:
           memory: 2G
           cpus: "2"
-
-volumes:
-  data:
-  cache:
-  logs:
-  reports:
