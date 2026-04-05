@@ -343,6 +343,69 @@
               </div>
             </div>
           </div>
+
+          <!-- Background Tasks -->
+          <div v-if="taskStatus" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
+            <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-clock mr-2"></i>Background Tasks</h3>
+
+            <!-- Real-time Monitoring -->
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <i class="fas fa-satellite-dish text-cyan-400 text-xs"></i>
+                  <span class="text-sm font-semibold text-slate-300">Real-time Monitoring</span>
+                </div>
+                <span :class="['px-2 py-0.5 text-xs rounded-full',
+                               taskStatus.realtime?.last_result === 'success' ? 'bg-emerald-500/20 text-emerald-300' :
+                               taskStatus.realtime?.last_result === 'error' ? 'bg-red-500/20 text-red-300' :
+                               'bg-slate-500/20 text-slate-400']">
+                  {{ taskStatus.realtime?.last_result || 'waiting' }}
+                </span>
+              </div>
+              <div class="text-xs text-slate-400 space-y-1">
+                <div class="flex justify-between">
+                  <span>Last run:</span>
+                  <span>{{ formatTimeAgo(taskStatus.realtime?.last_run) }}</span>
+                </div>
+                <div v-if="taskStatus.realtime?.article_count" class="flex justify-between">
+                  <span>Articles found:</span>
+                  <span class="text-cyan-300">{{ taskStatus.realtime.article_count }}</span>
+                </div>
+              </div>
+              <button @click="triggerTask('realtime')" class="mt-2 w-full px-3 py-1.5 bg-cyan-600/20 border border-cyan-500/30 text-cyan-300 text-xs rounded-lg hover:bg-cyan-600/30 transition-colors flex items-center justify-center gap-1">
+                <i class="fas fa-play"></i> Run Now
+              </button>
+            </div>
+
+            <!-- Daily Summary -->
+            <div class="border-t border-slate-700 pt-4">
+              <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-2">
+                  <i class="fas fa-file-alt text-yellow-400 text-xs"></i>
+                  <span class="text-sm font-semibold text-slate-300">Daily Summary</span>
+                </div>
+                <span :class="['px-2 py-0.5 text-xs rounded-full',
+                               taskStatus.daily_summary?.last_result === 'success' ? 'bg-emerald-500/20 text-emerald-300' :
+                               taskStatus.daily_summary?.last_result === 'error' ? 'bg-red-500/20 text-red-300' :
+                               'bg-slate-500/20 text-slate-400']">
+                  {{ taskStatus.daily_summary?.last_result || 'waiting' }}
+                </span>
+              </div>
+              <div class="text-xs text-slate-400 space-y-1">
+                <div class="flex justify-between">
+                  <span>Last run:</span>
+                  <span>{{ formatTimeAgo(taskStatus.daily_summary?.last_run) }}</span>
+                </div>
+                <div v-if="taskStatus.daily_summary?.next_run" class="flex justify-between">
+                  <span>Next run:</span>
+                  <span class="text-yellow-300">{{ formatTimeAgo(taskStatus.daily_summary.next_run) }}</span>
+                </div>
+              </div>
+              <button @click="triggerTask('daily_summary')" class="mt-2 w-full px-3 py-1.5 bg-yellow-600/20 border border-yellow-500/30 text-yellow-300 text-xs rounded-lg hover:bg-yellow-600/30 transition-colors flex items-center justify-center gap-1">
+                <i class="fas fa-play"></i> Run Now
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Main Content Area -->

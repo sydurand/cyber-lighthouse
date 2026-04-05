@@ -126,6 +126,23 @@ class APIClient {
       return { status: "offline" };
     });
   }
+
+  /**
+   * Get background task status
+   */
+  async getTaskStatus() {
+    return this.fetch("/tasks");
+  }
+
+  /**
+   * Trigger a background task manually
+   */
+  async triggerTask(task) {
+    return this.fetch("/tasks/trigger", {
+      method: "POST",
+      body: JSON.stringify({ task }),
+    });
+  }
 }
 
 // Export for Vue

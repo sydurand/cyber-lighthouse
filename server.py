@@ -7,10 +7,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
 
 from api import router
 from logging_config import logger
 from task_queue import get_task_queue
+from task_scheduler import get_scheduler
 
 
 # Lifespan context manager for startup and shutdown events
@@ -25,10 +29,16 @@ async def lifespan(app: FastAPI):
     task_queue = get_task_queue(num_workers=1, batch_delay=2)
     logger.info(f"Task queue started with 1 worker (batch delay: 2s)")
 
+    # Start background task scheduler (real-time monitoring + daily summaries)
+    scheduler = get_scheduler()
+    scheduler.start()
+    logger.info("Task scheduler started (real-time monitoring + daily summary)")
+
     yield
 
     # Shutdown
     logger.info("Cyber-Lighthouse Dashboard server shutting down...")
+    scheduler.stop()
     task_queue.stop()
 
 
@@ -106,6 +116,48 @@ async def health_check():
         },
         "issues": issues
     }
+
+
+# ============================================================================
+# Task Scheduler API
+# ============================================================================
+
+class TaskTriggerRequest(BaseModel):
+    """Request model for manual task trigger."""
+    task: str  # "realtime" or "daily_summary"
+
+
+@app.get("/api/tasks")
+async def get_task_status():
+    """Get status of background tasks (real-time monitoring and daily summary)."""
+    try:
+        scheduler = get_scheduler()
+        return scheduler.get_status()
+    except Exception as e:
+        logger.error(f"Error getting task status: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/api/tasks/trigger")
+async def trigger_task(request: TaskTriggerRequest):
+    """Manually trigger a background task."""
+    try:
+        scheduler = get_scheduler()
+
+        if request.task == "realtime":
+            result = scheduler.trigger_realtime_now()
+            return {"message": "Real-time monitoring triggered", "result": result}
+        elif request.task == "daily_summary":
+            result = scheduler.trigger_daily_now()
+            return {"message": "Daily summary triggered", "result": result}
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Unknown task: {request.task}. Use 'realtime' or 'daily_summary'."}
+            )
+    except Exception as e:
+        logger.error(f"Error triggering task: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 def main():

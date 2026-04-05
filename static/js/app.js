@@ -58,6 +58,10 @@ const app = createApp({
     // Mobile menu
     const showMobileMenu = ref(false);
 
+    // Background task status
+    const taskStatus = ref(null);
+    const taskTriggerLoading = ref(false);
+
     // Charts
     let chartBySource = null;
     let chartByDate = null;
@@ -311,6 +315,41 @@ const app = createApp({
       } finally {
         isLoading.value = false;
       }
+    };
+
+    const fetchTaskStatus = async () => {
+      try {
+        taskStatus.value = await apiClient.getTaskStatus();
+      } catch (error) {
+        console.error("Error fetching task status:", error);
+      }
+    };
+
+    const triggerTask = async (task) => {
+      try {
+        taskTriggerLoading.value = true;
+        const result = await apiClient.triggerTask(task);
+        showToast(result.message || `${task} triggered`, "success");
+        // Refresh task status after trigger
+        setTimeout(() => fetchTaskStatus(), 2000);
+      } catch (error) {
+        console.error("Error triggering task:", error);
+        showToast("Failed to trigger task", "error");
+      } finally {
+        taskTriggerLoading.value = false;
+      }
+    };
+
+    const formatTimeAgo = (isoDate) => {
+      if (!isoDate) return "Never";
+      const now = new Date();
+      const date = new Date(isoDate);
+      const diff = Math.floor((now - date) / 1000);
+
+      if (diff < 60) return "just now";
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return `${Math.floor(diff / 86400)}d ago`;
     };
 
     const changeAlertsPage = async (newPage) => {
@@ -745,14 +784,18 @@ const app = createApp({
     // Lifecycle
     onMounted(() => {
       refreshData();
+      fetchTaskStatus();
       autoRefresh();
       document.addEventListener("keydown", handleKeyboard);
-      
+
+      // Poll task status every 60s
+      setInterval(() => fetchTaskStatus(), 60000);
+
       // Apply saved theme
       if (theme.value === "light") {
         document.documentElement.classList.add("light-theme");
       }
-      
+
       // Expose filterByTag globally for onclick handlers in rendered HTML
       window.filterByTag = filterByTag;
     });
@@ -795,6 +838,8 @@ const app = createApp({
       showShortcutsModal,
       showExportMenu,
       showMobileMenu,
+      taskStatus,
+      taskTriggerLoading,
       uniqueSources,
       filteredArticles,
       paginatedHistory,
@@ -805,6 +850,9 @@ const app = createApp({
       filteredAlerts,
       hasMoreAlerts,
       refreshData,
+      fetchTaskStatus,
+      triggerTask,
+      formatTimeAgo,
       changeAlertsPage,
       changeHistoryPage,
       applyHistoryFilters,
