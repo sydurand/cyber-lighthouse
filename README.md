@@ -14,6 +14,27 @@ Real-time threat intelligence monitoring with semantic clustering, AI-driven ana
 
 ## Quick Start
 
+### Docker (Recommended)
+
+```bash
+# Build
+docker build -t cyber-lighthouse .
+
+# Run (mount config + persistent data)
+docker run -d --name lighthouse \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/cache:/app/cache \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/reports:/app/reports \
+  -p 8000:8000 \
+  cyber-lighthouse
+
+# Visit http://localhost:8000
+```
+
+### Manual Install
+
 ```bash
 # Install dependencies
 uv pip install trafilatura sentence-transformers scikit-learn

@@ -1,0 +1,16 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+.env
+*.db
+cache/
+logs/
+reports/
+static/
+tests/
+tests-requirements.txt
+*.egg-info
+.pytest_cache
+htmlcov/
