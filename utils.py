@@ -1155,13 +1155,22 @@ def get_embedding_model():
             from sentence_transformers import SentenceTransformer
 
             logger.info(f"Loading embedding model: {Config.EMBEDDING_MODEL}")
+            # Force CPU to avoid PyTorch CUDA crashes on certain systems
+            # (e.g. "getCount is non-monotonic" on Python 3.14)
+            import os
+            os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+
             # progress_bar kwarg was removed in sentence-transformers v4
             import inspect
             sig = inspect.signature(SentenceTransformer.__init__)
             if "progress_bar" in sig.parameters:
-                _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL, progress_bar=False)
+                _embedding_model = SentenceTransformer(
+                    Config.EMBEDDING_MODEL, progress_bar=False, device="cpu"
+                )
             else:
-                _embedding_model = SentenceTransformer(Config.EMBEDDING_MODEL)
+                _embedding_model = SentenceTransformer(
+                    Config.EMBEDDING_MODEL, device="cpu"
+                )
             logger.info(f"Embedding model loaded successfully: {Config.EMBEDDING_MODEL}")
             return _embedding_model
 
