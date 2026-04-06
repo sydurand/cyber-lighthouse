@@ -174,7 +174,8 @@ You are a CISO and Senior CTI Analyst. Produce a high-quality end-of-day report 
 The articles are already grouped by topic. Cross-reference information within each topic for a comprehensive analysis.
 Use Section 2 (CISA) to identify critical vulnerabilities (mark as 🚨 if found in CISA list).
 
-Expected Markdown Format:
+EXPECTED MARKDOWN FORMAT (follow EXACTLY):
+
 # 🛑 DAILY CYBER THREAT INTELLIGENCE REPORT
 
 ## 🌐 PART 1: STRATEGIC SUMMARY
@@ -183,12 +184,29 @@ Expected Markdown Format:
 
 ## 🛠️ PART 2: CRITICAL TECHNICAL ALERTS
 - **Vulnerabilities**: (Critical CVEs and urgent items)
+  - CVE-XXXX-XXXX: description
+  - CVE-XXXX-XXXX: description
 - **TTPs**: (Attack methods and techniques)
+  - Technique name: details
+    - Sub-details if needed
 - **IOCs**: (Indicators of Compromise)
+  - IP addresses, domains, hashes
 
 ## 📊 PART 3: RECOMMENDATIONS
 - **Immediate Actions**: (What to do now)
+  - Action 1
+  - Action 2
 - **Monitoring Focus**: (What to watch for)
+  - Item 1
+  - Item 2
+
+STRICT FORMATTING RULES:
+- Use EXACTLY 2 spaces for each level of list indentation
+- Nested sub-items MUST be indented with 2 more spaces than their parent
+- NEVER use tabs — only spaces for indentation
+- Bold text uses **text** format (not __text__)
+- Each section header (##) must be followed by a blank line before the list
+- Keep list items concise — use sub-items for details, not long paragraphs
 """
 
     logger.info(f"Generating summary for {len(topics)} topics with AI provider...")
