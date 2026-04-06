@@ -19,11 +19,39 @@ def compute_article_hash(title: str, content: str) -> str:
     return hashlib.sha256(combined.encode()).hexdigest()
 
 
+def _get_embedding_model():
+    """Get embedding model instance (lazy-loaded). Returns None if unavailable."""
+    try:
+        from sentence_transformers import SentenceTransformer
+        model_name = Config.EMBEDDING_MODEL
+        # Use module-level cache to avoid reloading
+        if not hasattr(_get_embedding_model, '_model'):
+            _get_embedding_model._model = SentenceTransformer(model_name)
+        return _get_embedding_model._model
+    except Exception as e:
+        logger.debug(f"Embedding model not available: {e}")
+        return None
+
+
+def _cosine_similarity(vec1, vec2) -> float:
+    """Calculate cosine similarity between two vectors."""
+    import numpy as np
+    
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    
+    return float(dot_product / (norm1 * norm2))
+
+
 def detect_similar_articles(article: dict, existing_articles: list, similarity_threshold: float = 0.8) -> bool:
     """
     Detect if article is too similar to existing ones.
 
-    Uses title similarity and content hash comparison.
+    Uses semantic embeddings first, falls back to title keyword matching.
 
     Args:
         article: Article to check
@@ -35,6 +63,31 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
     """
     article_hash = compute_article_hash(article["title"], article.get("content", ""))
 
+    # Try semantic similarity first
+    model = _get_embedding_model()
+    if model is not None:
+        try:
+            import numpy as np
+            titles = [article["title"]] + [e["title"] for e in existing_articles]
+            embeddings = model.encode(titles, convert_to_numpy=True)
+            
+            article_embedding = embeddings[0]
+            for i, existing in enumerate(existing_articles):
+                # Exact hash match = duplicate
+                existing_hash = compute_article_hash(existing["title"], existing.get("content", ""))
+                if article_hash == existing_hash:
+                    logger.debug(f"Duplicate detected: {article['title'][:50]}...")
+                    return True
+                
+                # Semantic similarity
+                sim = _cosine_similarity(article_embedding, embeddings[i + 1])
+                if sim >= similarity_threshold:
+                    logger.debug(f"Similar article detected (semantic): {article['title'][:50]}... (similarity: {sim:.2f})")
+                    return True
+        except Exception as e:
+            logger.debug(f"Semantic similarity check failed: {e}")
+
+    # Fallback to title keyword similarity
     for existing in existing_articles:
         existing_hash = compute_article_hash(existing["title"], existing.get("content", ""))
 
@@ -46,7 +99,7 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
         # Check title similarity
         title_sim = _string_similarity(article["title"], existing["title"])
         if title_sim > similarity_threshold:
-            logger.debug(f"Similar article detected: {article['title'][:50]}... (similarity: {title_sim:.2f})")
+            logger.debug(f"Similar article detected (keyword): {article['title'][:50]}... (similarity: {title_sim:.2f})")
             return True
 
     return False

@@ -10,6 +10,52 @@ from config import Config
 # Disable HuggingFace implicit token before any HF imports
 os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
 
+# Lazy-loaded embedding model
+_embedding_model = None
+_embedding_lock = threading.Lock()
+
+
+def _get_embedding_model():
+    """Get or create the sentence transformer model instance (thread-safe, lazy-loaded)."""
+    global _embedding_model
+    if _embedding_model is None:
+        with _embedding_lock:
+            if _embedding_model is None:
+                try:
+                    from sentence_transformers import SentenceTransformer
+                    model_name = Config.EMBEDDING_MODEL
+                    logger.info(f"Loading embedding model: {model_name}")
+                    _embedding_model = SentenceTransformer(model_name)
+                    logger.info(f"Embedding model loaded successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to load embedding model: {e}. Falling back to keyword matching.")
+                    _embedding_model = False  # Mark as failed to avoid retry
+    return _embedding_model if _embedding_model else None
+
+
+def _compute_embeddings(texts: list) -> list:
+    """Compute embeddings for a list of texts using sentence-transformers."""
+    model = _get_embedding_model()
+    if model is None:
+        return None
+    
+    embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+    return embeddings
+
+
+def _cosine_similarity(vec1, vec2) -> float:
+    """Calculate cosine similarity between two vectors."""
+    import numpy as np
+    
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
+    
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    
+    return float(dot_product / (norm1 * norm2))
+
 # Cache for relevance checks and tags to avoid repeated API calls
 _relevance_cache = {}
 _tag_cache = {}
@@ -187,7 +233,10 @@ def format_log_message(level: str, message: str) -> str:
 
 def detect_similar_articles(articles: list) -> dict:
     """
-    Group similar articles using semantic similarity.
+    Group similar articles using semantic similarity via embeddings.
+
+    Uses sentence-transformers to compute embeddings and cosine similarity.
+    Falls back to keyword-based Jaccard similarity if embeddings unavailable.
 
     Returns a dict where keys are article IDs and values are group IDs.
     Articles with the same group ID are considered duplicates/similar.
@@ -196,10 +245,85 @@ def detect_similar_articles(articles: list) -> dict:
         return {a.get("id"): a.get("id") for a in articles}
 
     groups = {}
-    article_titles = {a.get("id"): a.get("title", "") for a in articles}
 
-    # Simple similarity: if titles share key words (case-insensitive)
-    # This is a fallback when AI is not available
+    # Try semantic embeddings first
+    embeddings = _try_semantic_clustering(articles)
+    if embeddings is not None:
+        return _cluster_with_embeddings(articles, embeddings)
+
+    # Fallback to keyword-based similarity
+    logger.debug("Using keyword-based similarity for article clustering")
+    return _cluster_with_keywords(articles)
+
+
+def _try_semantic_clustering(articles: list) -> list:
+    """Attempt to compute embeddings for all articles. 
+    Uses title + content snippet for better semantic representation.
+    Returns None on failure.
+    """
+    try:
+        # Use title + first 200 chars of content for richer embeddings
+        texts = []
+        for a in articles:
+            title = a.get("title", "")
+            content = a.get("content", "")[:200]  # First 200 chars for context
+            if content:
+                texts.append(f"{title}. {content}")
+            else:
+                texts.append(title)
+        
+        embeddings = _compute_embeddings(texts)
+        if embeddings is None or len(embeddings) != len(articles):
+            return None
+        return embeddings
+    except Exception as e:
+        logger.warning(f"Semantic clustering failed: {e}. Falling back to keyword matching.")
+        return None
+
+
+def _cluster_with_embeddings(articles: list, embeddings) -> dict:
+    """Cluster articles using cosine similarity on embeddings."""
+    import numpy as np
+    
+    groups = {}
+    threshold = Config.SEMANTIC_SIMILARITY_THRESHOLD
+
+    for i, article1 in enumerate(articles):
+        if article1.get("id") in groups:
+            continue
+
+        group_id = article1.get("id")
+        groups[group_id] = group_id
+
+        for j in range(i + 1, len(articles)):
+            article2 = articles[j]
+            if article2.get("id") in groups:
+                continue
+
+            sim = _cosine_similarity(embeddings[i], embeddings[j])
+
+            # Also check keyword overlap for high-signal matches
+            title1_words = set(article1.get("title", "").lower().split())
+            title2_words = set(article2.get("title", "").lower().split())
+            keyword_sim = len(title1_words & title2_words) / len(title1_words | title2_words) if (title1_words | title2_words) else 0
+
+            # Cluster if either semantic OR keyword similarity is high enough
+            # Use lower threshold for semantic (0.60) since embeddings capture meaning better
+            # Also cluster when semantic similarity is moderate AND there's some keyword overlap
+            semantic_match = sim >= max(0.60, threshold * 0.92)
+            keyword_match = keyword_sim > 0.6
+            moderate_semantic_with_keywords = sim >= 0.55 and keyword_sim > 0.05  # Even minimal keyword overlap helps
+            
+            if semantic_match or keyword_match or moderate_semantic_with_keywords:
+                groups[article2.get("id")] = group_id
+
+    return groups
+
+
+def _cluster_with_keywords(articles: list) -> dict:
+    """Fallback: cluster articles using Jaccard similarity on title words."""
+    groups = {}
+
     for i, article1 in enumerate(articles):
         if article1.get("id") in groups:
             continue
@@ -209,20 +333,17 @@ def detect_similar_articles(articles: list) -> dict:
 
         title1_words = set(article1.get("title", "").lower().split())
 
-        # Compare with remaining articles
-        for article2 in articles[i + 1 :]:
+        for article2 in articles[i + 1:]:
             if article2.get("id") in groups:
                 continue
 
             title2_words = set(article2.get("title", "").lower().split())
 
-            # Calculate Jaccard similarity
             if title1_words and title2_words:
                 intersection = len(title1_words & title2_words)
                 union = len(title1_words | title2_words)
                 similarity = intersection / union if union > 0 else 0
 
-                # If similarity > 60%, consider them similar
                 if similarity > 0.6:
                     groups[article2.get("id")] = group_id
 
