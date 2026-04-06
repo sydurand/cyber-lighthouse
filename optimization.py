@@ -51,7 +51,8 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
     """
     Detect if article is too similar to existing ones.
 
-    Uses semantic embeddings first, falls back to title keyword matching.
+    Uses semantic embeddings first, falls back to AI verification for uncertain cases,
+    then title keyword matching as final fallback.
 
     Args:
         article: Article to check
@@ -84,6 +85,19 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
                 if sim >= similarity_threshold:
                     logger.debug(f"Similar article detected (semantic): {article['title'][:50]}... (similarity: {sim:.2f})")
                     return True
+                
+                # Uncertain zone - use AI to verify
+                if 0.45 <= sim < similarity_threshold:
+                    content1 = article.get("content", "")
+                    content2 = existing.get("content", "")
+                    if len(content1) > 50 or len(content2) > 50:
+                        from utils import _ai_verify_similarity
+                        if _ai_verify_similarity(
+                            article["title"], content1,
+                            existing["title"], content2
+                        ):
+                            logger.debug(f"Similar article detected (AI verified): {article['title'][:50]}...")
+                            return True
         except Exception as e:
             logger.debug(f"Semantic similarity check failed: {e}")
 

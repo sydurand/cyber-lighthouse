@@ -60,6 +60,7 @@ def _cosine_similarity(vec1, vec2) -> float:
 _relevance_cache = {}
 _tag_cache = {}
 _dedup_cache = {}
+_clustering_ai_cache = {}
 
 # Load tag cache from file if exists
 def _load_tag_cache():
@@ -281,8 +282,71 @@ def _try_semantic_clustering(articles: list) -> list:
         return None
 
 
+def _ai_verify_similarity(title1: str, content1: str, title2: str, content2: str) -> bool:
+    """
+    Use AI to determine if two articles are about the same security topic.
+    
+    This is called when semantic similarity is in the "uncertain zone" (0.45-0.60).
+    Results are cached to avoid repeated API calls for the same pair.
+    
+    Returns True if articles are about the same topic.
+    """
+    # Check cache first
+    cache_key = hashlib.sha256(
+        f"{title1}:{title2}:{content1[:100]}:{content2[:100]}".encode()
+    ).hexdigest()
+    
+    if cache_key in _clustering_ai_cache:
+        return _clustering_ai_cache[cache_key]
+    
+    try:
+        from ai_client import get_ai_client
+        from optimization import get_call_counter
+        
+        # Check rate limit before making API call
+        call_counter = get_call_counter()
+        if not call_counter.can_make_call():
+            logger.debug("AI clustering verification skipped (rate limit)")
+            return False
+        
+        ai_client = get_ai_client()
+        
+        prompt = f"""Determine if these two articles are about the SAME specific security incident or vulnerability.
+
+Article 1:
+Title: {title1}
+Content: {content1[:300]}
+
+Article 2:
+Title: {title2}
+Content: {content2[:300]}
+
+Answer ONLY with YES or NO. Do not explain."""
+
+        response = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction="You are a security analyst determining if two articles describe the same specific security incident, vulnerability, or threat actor. Focus on whether they reference the same CVE, vendor, product, or attack campaign. Answer only YES or NO.",
+            temperature=0.1,
+            timeout=30
+        )
+        
+        call_counter.add_call()
+        result = response.strip().upper().startswith("YES")
+        
+        # Cache the result
+        _clustering_ai_cache[cache_key] = result
+        
+        logger.debug(f"AI clustering verdict: {'SAME TOPIC' if result else 'DIFFERENT'} | {title1[:50]}... vs {title2[:50]}...")
+        return result
+        
+    except Exception as e:
+        logger.warning(f"AI clustering verification failed: {e}")
+        # On error, be conservative and don't cluster
+        return False
+
+
 def _cluster_with_embeddings(articles: list, embeddings) -> dict:
-    """Cluster articles using cosine similarity on embeddings."""
+    """Cluster articles using cosine similarity on embeddings, with AI verification for uncertain cases."""
     import numpy as np
     
     groups = {}
@@ -307,15 +371,31 @@ def _cluster_with_embeddings(articles: list, embeddings) -> dict:
             title2_words = set(article2.get("title", "").lower().split())
             keyword_sim = len(title1_words & title2_words) / len(title1_words | title2_words) if (title1_words | title2_words) else 0
 
-            # Cluster if either semantic OR keyword similarity is high enough
-            # Use lower threshold for semantic (0.60) since embeddings capture meaning better
-            # Also cluster when semantic similarity is moderate AND there's some keyword overlap
+            # Tier 1: High confidence - cluster immediately
             semantic_match = sim >= max(0.60, threshold * 0.92)
             keyword_match = keyword_sim > 0.6
-            moderate_semantic_with_keywords = sim >= 0.55 and keyword_sim > 0.05  # Even minimal keyword overlap helps
             
-            if semantic_match or keyword_match or moderate_semantic_with_keywords:
+            if semantic_match or keyword_match:
                 groups[article2.get("id")] = group_id
+                continue
+            
+            # Tier 2: Uncertain zone (0.45-0.60) - use AI to verify
+            if 0.45 <= sim < 0.60:
+                content1 = article1.get("content", "")
+                content2 = article2.get("content", "")
+                
+                # Only use AI if we have some content to analyze
+                if len(content1) > 50 or len(content2) > 50:
+                    ai_verdict = _ai_verify_similarity(
+                        article1.get("title", ""), content1,
+                        article2.get("title", ""), content2
+                    )
+                    if ai_verdict:
+                        groups[article2.get("id")] = group_id
+                        continue
+            
+            # Tier 3: Low confidence - don't cluster
+            # (sim < 0.45 or AI said no)
 
     return groups
 
