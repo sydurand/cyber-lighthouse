@@ -94,17 +94,30 @@ class TaskScheduler:
 
     def trigger_realtime_now(self) -> dict:
         """Manually trigger real-time monitoring."""
-        logger.info("Manual trigger: real-time monitoring")
+        logger.info("Manual trigger: real-time monitoring (background)")
         next_run = datetime.now() + timedelta(seconds=self.realtime_interval)
         self.realtime_status.mark_start(next_run)
+        self.realtime_status.article_count = 0
+        self.realtime_status.last_result = "running"
+
+        # Run in background so API returns immediately
+        thread = threading.Thread(
+            target=self._realtime_background,
+            daemon=True,
+            name="manual-realtime-monitoring"
+        )
+        thread.start()
+
+        return {"message": "Real-time monitoring started", "status": "running"}
+
+    def _realtime_background(self):
+        """Run real-time monitoring in a background thread and update status."""
         result = self._run_realtime_once()
 
         if result.get("error"):
             self.realtime_status.mark_error(result["error"])
         else:
             self.realtime_status.mark_complete(article_count=result.get("new_articles", 0))
-
-        return result
 
     def trigger_daily_now(self) -> dict:
         """Manually trigger daily summary — runs in background thread."""

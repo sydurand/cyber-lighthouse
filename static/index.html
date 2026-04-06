@@ -357,6 +357,7 @@
                   <span class="text-sm font-semibold text-slate-300">Real-time Monitoring</span>
                 </div>
                 <span :class="['px-2 py-0.5 text-xs rounded-full',
+                               taskStatus.realtime?.last_result === 'running' ? 'bg-cyan-500/20 text-cyan-300 animate-pulse' :
                                taskStatus.realtime?.last_result === 'success' ? 'bg-emerald-500/20 text-emerald-300' :
                                taskStatus.realtime?.last_result === 'error' ? 'bg-red-500/20 text-red-300' :
                                'bg-slate-500/20 text-slate-400']">
