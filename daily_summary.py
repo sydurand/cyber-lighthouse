@@ -237,7 +237,8 @@ Expected Markdown Format:
             logger.error(f"Error marking topics processed: {e}")
 
         # Clean old data
-        clean_old_topics(hours_limit=72)
+        topic_retention_hours = int(os.getenv("TOPIC_RETENTION_HOURS", "168"))  # 7 days default
+        clean_old_topics(hours_limit=topic_retention_hours)
 
         logger.info("✅ Daily summary completed successfully")
         return summary_text
