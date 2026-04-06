@@ -136,8 +136,11 @@ def archive_report_locally(markdown_text):
 def clean_old_topics(hours_limit=72):
     """Removes old INACTIVE topics to keep database manageable.
     
-    Topics that are still trending (>= TRENDING_TOPIC_MIN_ARTICLES articles)
-    are preserved regardless of age.
+    A topic is preserved ONLY if it meets BOTH conditions:
+    1. Has enough articles (>= TRENDING_TOPIC_MIN_ARTICLES)
+    2. Has at least one article created within the retention period
+    
+    Topics that are old AND have no recent articles are marked as processed.
     """
     limit_date = (datetime.now() - timedelta(hours=hours_limit)).strftime("%Y-%m-%d")
     removed_count = 0
@@ -146,19 +149,23 @@ def clean_old_topics(hours_limit=72):
         import sqlite3
         with sqlite3.connect(db.db_file) as conn:
             cursor = conn.cursor()
-            # Get topics with articles older than limit, EXCEPT trending topics
+            # Get old topics that are NOT actively trending
+            # A topic is "active" if it has enough articles AND at least one recent
             cursor.execute("""
                 SELECT DISTINCT t.id FROM topics t
                 JOIN article_topics at ON t.id = at.topic_id
                 JOIN articles a ON at.article_id = a.id
                 WHERE a.created_at < ?
                 AND t.id NOT IN (
+                    -- Exclude topics that are BOTH trending AND have recent articles
                     SELECT t2.id FROM topics t2
                     JOIN article_topics at2 ON t2.id = at2.topic_id
+                    JOIN articles a2 ON at2.article_id = a2.id
                     GROUP BY t2.id
                     HAVING COUNT(at2.article_id) >= ?
+                       AND MAX(a2.created_at) >= ?
                 )
-            """, (limit_date, Config.TRENDING_TOPIC_MIN_ARTICLES))
+            """, (limit_date, Config.TRENDING_TOPIC_MIN_ARTICLES, limit_date))
 
             old_topic_ids = [row[0] for row in cursor.fetchall()]
 
@@ -173,7 +180,7 @@ def clean_old_topics(hours_limit=72):
                 conn.commit()
                 removed_count = len(old_topic_ids)
 
-        logger.info(f"Database cleaned: {removed_count} old INACTIVE topics marked (older than {hours_limit}h). Trending topics preserved.")
+        logger.info(f"Database cleaned: {removed_count} old INACTIVE topics marked (older than {hours_limit}h). Active trending topics preserved.")
 
     except Exception as e:
         logger.error(f"Error cleaning old topics: {e}")

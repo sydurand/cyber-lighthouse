@@ -28,10 +28,16 @@ cache = get_cache()
 def _get_trending_topic_map():
     """
     Build a mapping of article_id -> topic_id for topics that meet
-    the trending threshold (article_count >= TRENDING_TOPIC_MIN_ARTICLES).
+    the trending threshold (article_count >= TRENDING_TOPIC_MIN_ARTICLES)
+    AND have at least one recent article within TOPIC_RETENTION_HOURS.
+    
     Also returns topic_id -> latest_article_date for sort override
     and topic_id -> list of related article source info.
     """
+    import os
+    retention_hours = int(os.getenv("TOPIC_RETENTION_HOURS", "168"))
+    limit_date = (datetime.now() - timedelta(hours=retention_hours)).strftime("%Y-%m-%d %H:%M:%S")
+
     trending_articles = {}  # article_id -> topic_id
     topic_latest_dates = {}  # topic_id -> latest_article_date
     topic_articles = {}  # topic_id -> list of {source, title, link, date, id}
@@ -39,14 +45,16 @@ def _get_trending_topic_map():
         with sqlite3.connect(db.db_file) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
-            # Find topics with enough articles
+            # Find topics with enough articles AND at least one recent article
             cur.execute("""
                 SELECT t.id, t.latest_article_date, COUNT(at.article_id) as article_count
                 FROM topics t
                 JOIN article_topics at ON t.id = at.topic_id
+                JOIN articles a ON at.article_id = a.id
                 GROUP BY t.id
                 HAVING article_count >= ?
-            """, (Config.TRENDING_TOPIC_MIN_ARTICLES,))
+                   AND MAX(a.created_at) >= ?
+            """, (Config.TRENDING_TOPIC_MIN_ARTICLES, limit_date))
             for row in cur.fetchall():
                 topic_id = row["id"]
                 topic_latest_dates[topic_id] = row["latest_article_date"]
