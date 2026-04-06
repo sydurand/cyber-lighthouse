@@ -15,6 +15,7 @@
       "#SocialEngineering"
     ],
     "Threat_Actors": [
+      "#ThreatActor",
       "#APT",
       "#Lazarus",
       "#BlackCat",

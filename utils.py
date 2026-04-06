@@ -1020,12 +1020,26 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
             if tag in valid_tags:
                 tags.append(tag)
 
-    # Generic APT detection
+    # Generic threat actor detection (when no specific actor identified)
     if not any(t in tags for t in actor_mapping.keys()):
+        # Check for APT patterns first
         apt_patterns = generic_patterns.get("#APT", [])
         if any(kw in text for kw in apt_patterns):
             if "#APT" in valid_tags:
                 tags.append("#APT")
+        # Then check for generic threat actor mentions
+        elif "#ThreatActor" in valid_tags:
+            threat_actor_indicators = [
+                r'threat\s*actor', r'adversar', r'attacker\s*group',
+                r'hacker\s*group', r'cyber\s*criminal', r'organized\s*crime',
+                r'well-resourced', r'sophisticated\s*(actor|group|attack)',
+                r'campaign', r'operation'
+            ]
+            # Only tag if content suggests deliberate human operation (not automated)
+            if any(re.search(pattern, text) for pattern in threat_actor_indicators):
+                # Skip if it's clearly just a generic vulnerability report
+                if not all(kw in text for kw in ['vulnerability', 'patch', 'update']):
+                    tags.append("#ThreatActor")
 
     # 3. Events & Impact - from generic patterns
     event_tags = ["#DataBreach", "#Incident", "#Patch", "#Disclosure", "#ThreatIntel", "#Exploit"]
