@@ -231,10 +231,10 @@ def detect_similar_articles(articles: list) -> dict:
 
 def is_relevant_security_article(title: str, content: str) -> bool:
     """
-    Filter out non-relevant content using AI analysis (with smart caching).
+    Determine whether an article is relevant to cybersecurity.
 
-    Returns True if the article contains specific, actionable security information.
-    Uses keyword matching first (no API), then AI only if needed.
+    Uses keyword matching as signals (never a hard reject), then AI
+    for the final decision when keywords are inconclusive.
     """
     if not title or not content:
         return False
@@ -244,66 +244,59 @@ def is_relevant_security_article(title: str, content: str) -> bool:
     if cache_key in _relevance_cache:
         return _relevance_cache[cache_key]
 
-    # Quick keyword check - no API call needed
     title_lower = title.lower()
     content_lower = content.lower()
 
-    # Obvious non-security content (quick reject)
-    obvious_non_security = [
-        "podcast", "stormcast", "audio briefing", "week in review",
-        "this week", "webinar", "conference", "interview", "roundup",
-        "removes support", "discontinues", "end of life for",
-        "feature update", "windows update", "quality update",
-        "monthly rollup", "preview of quality", "cumulative update",
-        "how to install", "step-by-step guide", "review:",
-    ]
-
-    for keyword in obvious_non_security:
-        if keyword in title_lower:
-            _relevance_cache[cache_key] = False
-            return False
-
-    # Security keywords (quick accept)
+    # Strong positive security keywords — quick accept (no AI)
     security_keywords = [
         "cve", "vulnerability", "exploit", "malware", "ransomware",
-        "phishing", "breach", "attack", "threat", "compromise",
-        "patch", "advisory", "critical", "zero-day", "flaw",
+        "phishing", "breach", "threat actor", "apt ",
+        "zero-day", "zeroday", "0day", "backdoor", "botnet",
     ]
-
     has_security_keyword = any(kw in content_lower[:500] for kw in security_keywords)
     if has_security_keyword:
         _relevance_cache[cache_key] = True
         return True
 
-    # If very short and no security keywords, likely not relevant
-    if len(content) < 100:
+    # Negative signals — not a hard reject, just context for AI
+    weak_signals = [kw for kw in [
+        "podcast", "webinar", "conference", "roundup",
+        "review:", "how to install", "step-by-step guide",
+    ] if kw in title_lower or kw in content_lower[:300]]
+
+    # If no negative signals AND no security keywords, quick reject
+    if not weak_signals and len(content) < 150:
         _relevance_cache[cache_key] = False
         return False
 
-    # Only call expensive AI if keywords inconclusive
+    # AI decides using both positive and negative signals
     try:
         from config import Config
         from ai_client import get_ai_client
         from optimization import get_call_counter
 
-        # Check if we have quota for AI call
         call_counter = get_call_counter()
         if not call_counter.can_make_call():
-            # When quota is low, be conservative - only accept obvious keywords
+            # Quota low — be conservative
             logger.warning(f"Rate limit low, using keyword-only filtering")
-            is_relevant = has_security_keyword or len(content) > 200
-            _relevance_cache[cache_key] = is_relevant
-            return is_relevant
+            _relevance_cache[cache_key] = False
+            return False
 
         ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
 
+        neg_context = ""
+        if weak_signals:
+            neg_context = f"\nWeak signals found: {', '.join(weak_signals)}"
+
         prompt = f"""Title: {title}
 Content: {content[:500]}
+{neg_context}
 
-Is this SPECIFIC security threat info (CVE, vulnerability, malware)? YES/NO"""
+Is this a relevant cybersecurity threat article? Answer ONLY with YES or NO."""
 
-        instruction = """Determine if article has SPECIFIC security threat information.
-YES = actionable threat/CVE/malware details. NO = generic news/podcast/summary."""
+        instruction = """You are a cybersecurity analyst triaging threat intelligence articles.
+Answer YES if the article discusses specific security threats, vulnerabilities, malware, threat actors, breaches, or attacks.
+Answer NO if it is generic tech news, product updates, install guides, webinars, podcasts, or roundups."""
 
         logger.debug(f"Checking relevance with AI: {title[:50]}...")
         result = ai_client.generate_content(
@@ -317,9 +310,7 @@ YES = actionable threat/CVE/malware details. NO = generic news/podcast/summary."
         result_text = result.strip().upper()
         is_relevant = "YES" in result_text
 
-        # Cache the result
         _relevance_cache[cache_key] = is_relevant
-
         logger.debug(f"Relevance check for '{title[:50]}...': {is_relevant}")
         return is_relevant
 
