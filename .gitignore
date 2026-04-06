@@ -35,6 +35,9 @@ reports/
 # Qwen Code
 .qwen/
 
+# Claud
+.claud/
+
 # Testing & coverage
 .pytest_cache/
 .coverage
