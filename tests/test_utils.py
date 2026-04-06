@@ -248,11 +248,25 @@ class TestTagExtraction:
     """Test tag extraction functionality."""
 
     def test_extract_tags_from_keywords_cve(self):
-        """Test extracting CVE tags."""
+        """Test extracting CVE tags with full identifier."""
         title = "CVE-2026-1234 Vulnerability"
         analysis = "Details about CVE-2026-1234"
 
         tags = _extract_tags_from_keywords_dynamic(title, analysis)
+        # Should extract specific CVE tag, not just generic #CVE
+        assert "#CVE-2026-1234" in tags
+        
+    def test_extract_tags_from_keywords_multiple_cves(self):
+        """Test extracting multiple CVE tags."""
+        title = "Patch Tuesday fixes multiple flaws"
+        analysis = "Patches released for CVE-2026-12345, CVE-2026-12346, and CVE-2026-12347"
+
+        tags = _extract_tags_from_keywords_dynamic(title, analysis)
+        # Should extract all specific CVE tags
+        assert "#CVE-2026-12345" in tags
+        assert "#CVE-2026-12346" in tags
+        assert "#CVE-2026-12347" in tags
+        # Should also have generic #CVE tag when multiple CVEs present
         assert "#CVE" in tags
 
     def test_extract_tags_from_keywords_ransomware(self):

@@ -584,13 +584,15 @@ INSTRUCTIONS:
    - New attack techniques or TTPs (e.g., #SupplyChainAttack, #RogueAccessPoint)
    - Notable vulnerabilities or exploit types (e.g., #SQLInjection, #Deserialization)
    - Target sectors not yet covered (e.g., #Education, #Energy)
+   - CVE identifiers with full ID: #CVE-2026-12345 (NOT just #CVE)
 3. Return one tag per line, prefixed with #
 4. Do NOT include explanations
-5. Prioritize: Threat Actors > TTPs > Impact > Sectors
+5. Prioritize: CVE IDs > Threat Actors > TTPs > Impact > Sectors
 6. Suggest tags only if they represent a meaningful, recurring trend — not one-off mentions
-7. For cluster/tracking IDs, normalize them: remove hyphens/spaces, e.g. "UAT-10608" → #UAT10608"""
+7. For cluster/tracking IDs, normalize them: remove hyphens/spaces, e.g. "UAT-10608" → #UAT10608
+8. For CVEs, ALWAYS use the full format: #CVE-YYYY-NNNNN (e.g., #CVE-2026-21896)"""
 
-        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, threat clusters (e.g. #UAT10608), tracking identifiers, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
+        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, threat clusters (e.g. #UAT10608), tracking identifiers, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. When CVEs are mentioned, ALWAYS extract them with full ID (#CVE-YYYY-NNNNN format), never use generic #CVE. Return tags only, one per line, starting with #."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
@@ -614,6 +616,11 @@ INSTRUCTIONS:
             # Ensure # prefix
             if not tag.startswith('#'):
                 tag = f"#{tag}"
+            
+            # Normalize CVE tags to full format: #CVE-YYYY-NNNNN
+            cve_match = re.match(r'#cve[- ]?(\d{4})[- ]?(\d{4,})', tag, re.IGNORECASE)
+            if cve_match:
+                tag = f"#CVE-{cve_match.group(1)}-{cve_match.group(2)}"
 
             # Validate against controlled vocabulary
             if tag in valid_tags:
@@ -989,11 +996,31 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
                 if tag_name in valid_tags and tag_name not in tags:
                     tags.append(tag_name)
 
-    # 4. CVE detection
-    cve_patterns = generic_patterns.get("#CVE", ["cve-?\\d{4}-?\\d{4,}"])
-    if any(re.search(pattern, text) for pattern in cve_patterns):
-        if "#CVE" in valid_tags:
-            tags.append("#CVE")
+    # 4. CVE detection - extract full CVE identifiers
+    cve_pattern = r'cve[- ](\d{4})[- ]?(\d{4,})'
+    cve_matches = re.findall(cve_pattern, text, re.IGNORECASE)
+    
+    if cve_matches:
+        # Add each specific CVE as a tag: #CVE-2026-12345
+        for year, number in cve_matches:
+            cve_tag = f"#CVE-{year}-{number}"
+            if cve_tag not in tags:
+                tags.append(cve_tag)
+        # Only add generic #CVE tag if there are multiple CVEs mentioned
+        if len(cve_matches) > 1 and "#CVE" in valid_tags:
+            tags.insert(0, "#CVE")
+    else:
+        # Fallback: check for generic CVE mentions without specific numbers
+        cve_patterns = generic_patterns.get("#CVE", ["cve-?\\d{4}-?\\d{4,}"])
+        if any(re.search(pattern, text) for pattern in cve_patterns):
+            if "#CVE" in valid_tags:
+                tags.append("#CVE")
+
+    # 4b. Deduplicate CVE tags - if we have specific CVEs, remove generic #CVE
+    specific_cves = [t for t in tags if re.match(r'#CVE-\d{4}-\d{4,}', t)]
+    if len(specific_cves) == 1 and "#CVE" in tags:
+        # Only one CVE found, keep specific tag, remove generic
+        tags.remove("#CVE")
 
     # 5. Vulnerability mentions (if no CVE)
     if "#Vulnerability" in generic_patterns:
@@ -1016,8 +1043,16 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
             if tag in valid_tags:
                 tags.append(tag)
 
-    # Filter to controlled vocabulary only and remove duplicates
-    tags = [t for t in tags if t in valid_tags]
+    # Filter to controlled vocabulary only, but allow CVE-specific tags through
+    def is_valid_tag(tag):
+        if tag in valid_tags:
+            return True
+        # Allow CVE-specific tags: #CVE-YYYY-NNNNN
+        if re.match(r'#CVE-\d{4}-\d{4,}', tag):
+            return True
+        return False
+    
+    tags = [t for t in tags if is_valid_tag(t)]
     tags = list(dict.fromkeys(tags))[:max_tags]
 
     return tags
