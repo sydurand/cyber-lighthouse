@@ -158,9 +158,9 @@ async def get_system_status() -> SystemStatusResponse:
                 cache_hit_rate=cache_stats.get("hit_rate", 0.0) * 100,
                 disk_usage_mb=round(cache_size_mb, 2),
             ),
-            api_quota_remaining=api_calls_remaining,
-            api_quota_total=rate_limit,
-            api_quota_reset_in_seconds=60,
+            api_quota_remaining=0,
+            api_quota_total=0,
+            api_quota_reset_in_seconds=0,
         )
 
     except Exception as e:
