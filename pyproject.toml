@@ -1,6 +1,6 @@
 [project]
 name = "cyber-lighthouse"
-version = "0.5.0"
+version = "0.5.1"
 description = "Real-time threat intelligence monitoring system with AI analysis"
 readme = "README.md"
 requires-python = ">=3.14"
