@@ -1,5 +1,9 @@
 # Cyber-Lighthouse
 
+<div align="center">
+  <img src="static/logo.png" alt="Cyber-Lighthouse Logo" width="128" height="128" />
+</div>
+
 Real-time threat intelligence monitoring with semantic clustering, AI-driven analysis, and daily synthesis reports.
 
 ## Features
