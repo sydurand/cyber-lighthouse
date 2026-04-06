@@ -18,7 +18,7 @@ from optimization import (
 from utils import (
     retry_with_backoff, validate_rss_article, extract_article_content, sanitize_title,
     fetch_full_article_content, send_teams_notification, cluster_articles_with_embeddings,
-    get_embedding_model, is_podcast_article
+    get_embedding_model, is_podcast_article, is_relevant_security_article
 )
 
 # Initialize AI client with configured provider for real-time analysis
@@ -305,6 +305,12 @@ def process_new_articles():
 
                 # Extract content with fallbacks
                 content = extract_article_content(article)
+
+                # Filter out non-security articles
+                if not is_relevant_security_article(article.title, content):
+                    logger.debug(f"Skipping non-security article ({source}): {article.title[:60]}...")
+                    articles_filtered_by_date += 1
+                    continue
 
                 # Check if article is similar to existing ones
                 is_similar = detect_similar_articles({"title": article.title, "content": content}, existing_articles)

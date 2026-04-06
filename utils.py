@@ -252,6 +252,10 @@ def is_relevant_security_article(title: str, content: str) -> bool:
     obvious_non_security = [
         "podcast", "stormcast", "audio briefing", "week in review",
         "this week", "webinar", "conference", "interview", "roundup",
+        "removes support", "discontinues", "end of life for",
+        "feature update", "windows update", "quality update",
+        "monthly rollup", "preview of quality", "cumulative update",
+        "how to install", "step-by-step guide", "review:",
     ]
 
     for keyword in obvious_non_security:
