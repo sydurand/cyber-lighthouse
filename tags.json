@@ -29,7 +29,20 @@
       "#GandCrab",
       "#Conti",
       "#BlackBasta",
-      "#Medusa"
+      "#Medusa",
+      "#HAFNIUM",
+      "#VoltTyphoon",
+      "#SaltTyphoon",
+      "#MustangPanda",
+      "#CharmingKitten",
+      "#RomCom",
+      "#Agenda",
+      "#DragonForce",
+      "#Trigona",
+      "#APT33",
+      "#APT37",
+      "#APT38",
+      "#Winnti"
     ],
     "CVEs_Vulnerabilities": [
       "#CVE",
@@ -83,7 +96,20 @@
       "#GandCrab": ["gandcrab", "gand crab"],
       "#Conti": ["conti"],
       "#BlackBasta": ["blackbasta", "black basta"],
-      "#Medusa": ["medusa ransomware", "medusa group"]
+      "#Medusa": ["medusa ransomware", "medusa group"],
+      "#HAFNIUM": ["hafnium"],
+      "#VoltTyphoon": ["volt typhoon"],
+      "#SaltTyphoon": ["salt typhoon"],
+      "#MustangPanda": ["mustang panda", "basin", "bronze president"],
+      "#CharmingKitten": ["charming kitten", "phosphorus", "apt35"],
+      "#RomCom": ["romcom", "storm-0978"],
+      "#Agenda": ["agenda ransomware"],
+      "#DragonForce": ["dragonforce"],
+      "#Trigona": ["trigona"],
+      "#APT33": ["apt33", "elfin", "refined kitten"],
+      "#APT37": ["apt37", "ricochet chollima", "scarlet sparrow"],
+      "#APT38": ["apt38", "lazarus group"],
+      "#Winnti": ["winnti", "apt17"]
     },
     "Targets_Sectors": {
       "#CriticalInfra": ["critical infrastructure", "power grid", "utility", "scada", "ics", "industrial control"],
