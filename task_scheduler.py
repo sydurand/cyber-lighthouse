@@ -191,23 +191,35 @@ class TaskScheduler:
         """Background loop for daily summary generation."""
         logger.info(f"Daily summary loop started (scheduled for {self.daily_summary_hour}:00)")
 
-        last_run_date = None  # Prevent running twice on same day
+        # Track the last date we ran a summary (persistent across restarts via database)
+        last_run_date = self._get_last_summary_date()
 
         while not self._stop_event.is_set():
             try:
                 now = datetime.now()
                 scheduled_time = now.replace(hour=self.daily_summary_hour, minute=0, second=0, microsecond=0)
 
-                # If it's already past the scheduled time today, schedule for tomorrow
-                if now >= scheduled_time:
-                    scheduled_time += timedelta(days=1)
+                # If we already passed the scheduled time today, check if we ran today
+                ran_today = last_run_date == now.date()
+                
+                # Determine when to run next
+                if ran_today:
+                    # Already ran today, schedule for tomorrow
+                    next_scheduled = scheduled_time + timedelta(days=1)
+                else:
+                    # Haven't run today yet
+                    if now >= scheduled_time:
+                        # It's past the scheduled time today - run now
+                        next_scheduled = scheduled_time
+                    else:
+                        # Not yet time - wait until scheduled_time today
+                        next_scheduled = scheduled_time
 
                 # Check if we should run
-                should_run = now >= scheduled_time and last_run_date != scheduled_time.date()
+                should_run = not ran_today and now >= next_scheduled
 
                 if should_run:
-                    next_run = scheduled_time + timedelta(days=1)
-                    self.daily_summary_status.mark_start(next_run)
+                    self.daily_summary_status.mark_start(next_scheduled + timedelta(days=1))
 
                     result = self._run_daily_summary_once()
 
@@ -216,7 +228,8 @@ class TaskScheduler:
                         logger.error(f"Daily summary failed: {result['error']}")
                     else:
                         self.daily_summary_status.mark_complete(article_count=result.get("articles_count", 0))
-                        last_run_date = scheduled_time.date()
+                        last_run_date = now.date()
+                        self._save_last_summary_date(now.date())
 
                     # Purge stale approved tags (runs once per day)
                     try:
@@ -237,6 +250,30 @@ class TaskScheduler:
                 self._stop_event.wait(60)
 
         logger.info("Daily summary loop stopped")
+
+    def _get_last_summary_date(self):
+        """Get the date of the last successful summary from database."""
+        try:
+            import sqlite3
+            with sqlite3.connect(db.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT MAX(created_at) FROM topics 
+                    WHERE processed_for_summary = 1
+                """)
+                row = cursor.fetchone()
+                if row and row[0]:
+                    from datetime import datetime as dt
+                    return dt.strptime(row[0], "%Y-%m-%d %H:%M:%S").date()
+        except Exception as e:
+            logger.debug(f"Failed to get last summary date: {e}")
+        return None
+
+    def _save_last_summary_date(self, date):
+        """Save the date of the last successful summary."""
+        # The date is implicitly saved by the topics being marked as processed
+        # This method is a no-op but kept for clarity
+        pass
 
     @staticmethod
     def _run_realtime_once() -> dict:
