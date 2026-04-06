@@ -101,7 +101,18 @@ class TaskScheduler:
     def trigger_daily_now(self) -> dict:
         """Manually trigger daily summary."""
         logger.info("Manual trigger: daily summary")
+        next_run = datetime.now() + timedelta(hours=1)
+        self.daily_summary_status.mark_start(next_run)
         result = self._run_daily_summary_once()
+
+        if result.get("error"):
+            self.daily_summary_status.mark_error(result["error"])
+        else:
+            self.daily_summary_status.mark_complete(
+                article_count=result.get("articles_count", 0),
+                next_run=datetime.now().replace(hour=self.daily_summary_hour, minute=0, second=0, microsecond=0),
+            )
+
         return result
 
     def get_status(self) -> dict:
@@ -243,7 +254,11 @@ class TaskScheduler:
                 }
             else:
                 logger.warning("Daily summary returned no content")
-                return {"articles_count": 0, "topics_processed": 0, "note": "no unprocessed topics"}
+                return {
+                    "articles_count": 0,
+                    "topics_processed": 0,
+                    "note": "No unprocessed topics — topics older than the retention period are skipped. New articles will be picked up on next run."
+                }
         except Exception as e:
             logger.error(f"Daily summary execution failed: {e}", exc_info=True)
             return {"error": str(e)}
