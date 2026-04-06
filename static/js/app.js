@@ -614,71 +614,79 @@ const app = createApp({
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      
+
       // Headers (process in order to avoid conflicts)
       html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
       html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
       html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
       html = html.replace(/^#### (.*$)/gm, '<h4>$1</h4>');
-      
+
       // Bold (before italic to avoid conflicts)
       html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      
+
       // Italic
       html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-      
+
       // Inline code
       html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-      
+
       // Horizontal rules
       html = html.replace(/^---$/gm, '<hr>');
       html = html.replace(/^\*\*\*$/gm, '<hr>');
-      
+
       // Process lists with proper nesting based on indentation
       const lines = html.split('\n');
       const result = [];
       let listItems = [];
-      
+
       const closeList = () => {
         if (listItems.length === 0) return;
-        
-        // Find base indentation (minimum)
-        const baseIndent = Math.min(...listItems.map(item => item.indent));
-        
-        // Build nested HTML structure
-        const buildNestedList = (items, parentIndent) => {
+
+        // Normalize indents: collect all unique indent levels, sort them,
+        // then map each to a depth (0, 1, 2...)
+        const uniqueIndents = [...new Set(listItems.map(i => i.indent))].sort((a, b) => a - b);
+        const indentMap = {};
+        uniqueIndents.forEach((ind, idx) => { indentMap[ind] = idx; });
+
+        // Build nested HTML structure using depth levels
+        const buildNestedList = (items, depth) => {
           let html = '<ul>';
           let i = 0;
-          
+
           while (i < items.length) {
             const item = items[i];
-            
-            if (item.indent === parentIndent) {
-              // Same level - regular list item
+            const itemDepth = indentMap[item.indent];
+
+            if (itemDepth === depth) {
+              // Same depth - regular list item
               html += `<li>${item.content}</li>`;
               i++;
-            } else if (item.indent > parentIndent) {
-              // Deeper level - nested list
-              const nestedItems = [];
-              while (i < items.length && items[i].indent > parentIndent) {
-                nestedItems.push(items[i]);
+            } else if (itemDepth > depth) {
+              // Deeper level - nested list inside the current <li>
+              // We need to inject it before the next sibling at our depth
+              // Find how many items belong to this nested block
+              const nestedStart = i;
+              i++;
+              while (i < items.length && indentMap[items[i].indent] > depth) {
                 i++;
               }
-              html += buildNestedList(nestedItems, nestedItems[0].indent);
+              const nestedItems = items.slice(nestedStart, i);
+              // Replace the last <li> close with the nested list before it
+              html = html.replace(/<\/li>\s*$/, '') + buildNestedList(nestedItems, depth + 1) + '</li>';
             } else {
-              // Shouldn't happen if called correctly
+              // Shallower - stop building at this level
               break;
             }
           }
-          
+
           html += '</ul>';
           return html;
         };
-        
-        result.push(buildNestedList(listItems, baseIndent));
+
+        result.push(buildNestedList(listItems, 0));
         listItems = [];
       };
-      
+
       for (const line of lines) {
         // Empty line - close current list
         if (!line.trim()) {
@@ -686,14 +694,14 @@ const app = createApp({
           result.push('');
           continue;
         }
-        
+
         // Skip lines that are already HTML headers
         if (line.match(/^<(h[1-6])/)) {
           closeList();
           result.push(line);
           continue;
         }
-        
+
         // Detect list items: optional whitespace + "- " + content
         const match = line.match(/^(\s*)- (.+)$/);
         if (match) {
@@ -703,18 +711,26 @@ const app = createApp({
         } else {
           // Not a list item - wrap in paragraph
           closeList();
-          result.push(`<p>${line}</p>`);
+          // Preserve leading non-space indentation for sub-sections
+          const trimmed = line.trimStart();
+          const leadingSpaces = line.length - trimmed.length;
+          if (leadingSpaces > 0) {
+            // Use a div with margin-left to preserve visual indentation
+            result.push(`<div style="margin-left: ${leadingSpaces * 0.5}rem;"><p>${trimmed}</p></div>`);
+          } else {
+            result.push(`<p>${line}</p>`);
+          }
         }
       }
-      
+
       // Close any remaining list
       closeList();
-      
+
       html = result.join('\n');
-      
+
       // Clean up multiple empty lines
       html = html.replace(/\n{3,}/g, '\n\n');
-      
+
       return html;
     };
 
