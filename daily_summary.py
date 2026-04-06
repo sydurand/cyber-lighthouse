@@ -170,10 +170,17 @@ def clean_old_topics(hours_limit=72):
 
 
 def generate_daily_summary():
-    """Generates and sends a daily CTI summary report."""
+    """Generates and sends a daily CTI summary report for the previous day."""
     logger.info("Starting daily CTI summary generation...")
 
-    # Get unprocessed topics
+    # Calculate previous day date range
+    yesterday = datetime.now() - timedelta(days=1)
+    day_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    logger.info(f"Generating summary for: {day_start.strftime('%Y-%m-%d')} 00:00 to {day_end.strftime('%Y-%m-%d')} 23:59")
+
+    # Get all topics created during the previous day
     try:
         import sqlite3
         with sqlite3.connect(db.db_file) as conn:
@@ -183,20 +190,20 @@ def generate_daily_summary():
                 SELECT t.id, t.main_title, COUNT(DISTINCT at.article_id) as article_count
                 FROM topics t
                 LEFT JOIN article_topics at ON t.id = at.topic_id
-                WHERE t.processed_for_summary = 0
+                WHERE t.created_at >= ? AND t.created_at <= ?
                 GROUP BY t.id
-                ORDER BY t.created_at DESC
-            """)
+                ORDER BY t.created_at ASC
+            """, (day_start.strftime("%Y-%m-%d %H:%M:%S"), day_end.strftime("%Y-%m-%d %H:%M:%S")))
             topics = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
         logger.error(f"Error retrieving topics: {e}")
         return None
 
     if not topics:
-        logger.info("No unprocessed topics for summary")
+        logger.info(f"No topics found for {yesterday.strftime('%Y-%m-%d')}")
         return None
 
-    logger.info(f"Processing {len(topics)} topics for daily summary")
+    logger.info(f"Processing {len(topics)} topics from {yesterday.strftime('%Y-%m-%d')}")
 
     # Build context for summary
     super_prompt = "=== SECTION 1: DAILY EVENTS (GROUPED BY TOPIC) ===\n"
@@ -286,26 +293,15 @@ STRICT FORMATTING RULES:
         # Archive locally
         archive_report_locally(summary_text)
 
-        # Cache for web interface
-        topics_hash = hashlib.md5(
-            json.dumps([(t['id'], t['main_title']) for t in topics], sort_keys=True).encode()
-        ).hexdigest()
-        cache_synthesis_report(summary_text, topics, topics_hash)
-
-        # Mark topics as processed
-        try:
-            import sqlite3
-            with sqlite3.connect(db.db_file) as conn:
-                cursor = conn.cursor()
-                for topic in topics:
-                    cursor.execute(
-                        "UPDATE topics SET processed_for_summary = 1 WHERE id = ?",
-                        (topic['id'],)
-                    )
-                conn.commit()
-            logger.info(f"Marked {len(topics)} topics as processed")
-        except Exception as e:
-            logger.error(f"Error marking topics processed: {e}")
+        # Cache for web interface (use date as cache key)
+        cache_key = f"daily_summary:{yesterday.strftime('%Y-%m-%d')}"
+        cache_data = {
+            "date": yesterday.strftime('%Y-%m-%d'),
+            "content": summary_text,
+            "articles_count": len(topics),
+            "generated_at": datetime.now().isoformat(),
+        }
+        cache_synthesis_report(summary_text, topics, cache_key)
 
         # Clean old data
         topic_retention_hours = int(os.getenv("TOPIC_RETENTION_HOURS", "168"))  # 7 days default
