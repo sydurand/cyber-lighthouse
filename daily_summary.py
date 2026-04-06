@@ -14,6 +14,56 @@ import feedparser
 db = Database()
 
 
+def _normalize_markdown(text: str) -> str:
+    """
+    Normalize markdown list indentation to consistent 2-space levels.
+
+    The AI sometimes produces inconsistent indentation (tabs, 4 spaces, etc.).
+    This function ensures all list items use exactly 2 spaces per nesting level,
+    which is the markdown-it standard for nested lists.
+    """
+    lines = text.split('\n')
+    result = []
+    in_list = False
+    list_stack = []  # tracks indent levels encountered in current list block
+
+    for line in lines:
+        # Detect list items: optional leading whitespace + "- " or "* "
+        stripped = line.lstrip()
+        if stripped.startswith('- ') or stripped.startswith('* '):
+            raw_indent = len(line) - len(stripped)
+            content = stripped[2:]  # remove "- " or "* "
+
+            if not in_list:
+                # Starting a new list — reset tracking
+                in_list = True
+                list_stack = [raw_indent]
+
+            # Determine nesting level
+            if raw_indent > list_stack[-1]:
+                # Deeper nesting — new level
+                list_stack.append(raw_indent)
+            elif raw_indent < list_stack[-1]:
+                # Shallower — pop levels until we match
+                while len(list_stack) > 1 and raw_indent < list_stack[-1]:
+                    list_stack.pop()
+                # If still not matching, push it
+                if raw_indent != list_stack[-1]:
+                    list_stack.append(raw_indent)
+
+            depth = list_stack.index(raw_indent) if raw_indent in list_stack else len(list_stack) - 1
+            normalized = '  ' * depth + '- ' + content
+            result.append(normalized)
+        else:
+            # Not a list item
+            if in_list:
+                in_list = False
+                list_stack = []
+            result.append(line)
+
+    return '\n'.join(result)
+
+
 def fetch_cisa_context():
     """Fetches the latest CISA Known Exploited Vulnerabilities context."""
     logger.info("Fetching CISA context...")
@@ -219,6 +269,9 @@ STRICT FORMATTING RULES:
             temperature=0.1,
             timeout=120
         )
+
+        # Normalize markdown: ensure consistent 2-space list indentation
+        summary_text = _normalize_markdown(summary_text)
 
         # Display summary
         logger.info("\n" + "=" * 70)
