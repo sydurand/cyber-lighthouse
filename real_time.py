@@ -64,24 +64,27 @@ def analyze_article_with_ai(title: str, content: str) -> str:
 
     Uses the configured AI provider to generate a quick SOC-level alert analysis.
     Checks cache first to reduce API calls.
+    Automatically highlights CVE identifiers in the analysis.
 
     Args:
         title: Article title
         content: Article content
 
     Returns:
-        Analysis text from AI provider (cached or fresh)
+        Analysis text from AI provider with CVEs highlighted (cached or fresh)
     """
     # Check cache first
     cached_response = cache.get_analysis(title, content)
     if cached_response:
         logger.info(f"✓ Using cached analysis (saved 1 API call)")
-        return cached_response
+        # Highlight CVEs in cached response
+        from utils import highlight_cves_in_text
+        return highlight_cves_in_text(cached_response)
 
     # Check rate limit
     if not call_counter.can_make_call():
         logger.warning(f"Rate limit approaching ({call_counter.get_remaining_quota()} calls left)")
-        return "Analysis skipped: Rate limit approaching. Try again in a few minutes."
+        return "Analysis unavailable: Rate limit approaching. Try again in a few minutes."
 
     prompt = f"Title: {title}\nContent: {content}"
 
@@ -100,7 +103,11 @@ Provide ONLY this format, be very concise (1 line max per bullet point):
             timeout=Config.GEMINI_TIMEOUT
         )
 
-        # Cache the response
+        # Highlight CVEs in the analysis
+        from utils import highlight_cves_in_text
+        response_text = highlight_cves_in_text(response_text)
+
+        # Cache the original response (without markdown highlighting)
         cache.set_analysis(title, content, response_text)
         call_counter.add_call()
 

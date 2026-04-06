@@ -526,6 +526,45 @@ Answer NO if it is generic tech news, product updates, install guides, webinars,
         return is_relevant
 
 
+def highlight_cves_in_text(text: str) -> str:
+    """
+    Highlight CVE identifiers in alert summary/analysis text.
+    
+    Finds CVE-YYYY-NNNNN patterns and wraps them in markdown bold for visibility.
+    This makes it easier to spot which specific vulnerabilities are discussed.
+    Skips CVEs that are already in tag format (#CVE-YYYY-NNNNN).
+    
+    Args:
+        text: Alert analysis or summary text
+        
+    Returns:
+        Text with CVEs highlighted in bold: **CVE-2026-12345**
+    """
+    import re
+    
+    if not text:
+        return text
+    
+    # Match CVE patterns: CVE-YYYY-NNNNN, CVE YYYY-NNNNN, cve-YYYY-NNNNN
+    # But NOT when already in tag format #CVE-YYYY-NNNNN
+    cve_pattern = r'(?<!#)([Cc][Vv][Ee][- ]?\d{4}[- ]?\d{4,})'
+    
+    def highlight_match(match):
+        cve_id = match.group(1)
+        # Normalize to standard format: CVE-YYYY-NNNNN
+        normalized = re.sub(r'[- ]+', '-', cve_id.upper().replace('CVE', 'CVE-'))
+        # Remove trailing dash if present
+        normalized = normalized.rstrip('-')
+        # Ensure proper format CVE-YYYY-NNNNN
+        if not normalized.startswith('CVE-'):
+            normalized = 'CVE-' + normalized[4:]
+        
+        return f"**{normalized}**"
+    
+    highlighted = re.sub(cve_pattern, highlight_match, text)
+    return highlighted
+
+
 def extract_tags_with_ai(title: str, analysis: str) -> list:
     """
     Extract security tags from article title and analysis using AI.
