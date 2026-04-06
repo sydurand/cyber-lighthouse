@@ -895,6 +895,39 @@ class Database:
             logger.error(f"Error rejecting tag: {e}")
             return False
 
+    def purge_stale_approved_tags(self, days_inactive: int = 90) -> list:
+        """
+        Remove approved tags that haven't been seen in the configured number of days.
+
+        Args:
+            days_inactive: Tags not seen in this many days are purged
+
+        Returns:
+            List of purged tag names
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tag, category FROM suggested_tags
+                    WHERE status = 'approved' AND last_seen < date('now', '-' || ? || ' days')
+                """, (days_inactive,))
+                stale = cursor.fetchall()
+
+                purged = []
+                for tag, category in stale:
+                    cursor.execute("""
+                        DELETE FROM suggested_tags WHERE tag = ? AND status = 'approved'
+                    """, (tag,))
+                    purged.append({"tag": tag, "category": category or "Unknown"})
+                    logger.info(f"Purged stale approved tag: {tag} (not seen in {days_inactive} days)")
+
+                conn.commit()
+                return purged
+        except sqlite3.Error as e:
+            logger.error(f"Error purging stale tags: {e}")
+            return []
+
     def delete_suggested_tag(self, tag_id: int) -> bool:
         """
         Delete a suggested tag record entirely.

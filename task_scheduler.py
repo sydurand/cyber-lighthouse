@@ -169,6 +169,16 @@ class TaskScheduler:
                         self.daily_summary_status.mark_complete(article_count=result.get("articles_count", 0))
                         last_run_date = scheduled_time.date()
 
+                    # Purge stale approved tags (runs once per day)
+                    try:
+                        from utils import purge_stale_tags_from_json
+                        stale_days = int(os.getenv("TAG_STALE_DAYS", "90"))
+                        purged = purge_stale_tags_from_json(days_inactive=stale_days)
+                        if purged:
+                            logger.info(f"Daily cleanup: purged {len(purged)} stale tag(s)")
+                    except Exception as e:
+                        logger.debug(f"Stale tag purge failed: {e}")
+
                 # Sleep until next check (every 60s)
                 self._stop_event.wait(60)
 

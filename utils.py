@@ -502,6 +502,65 @@ def auto_approve_and_persist_tags(min_count: int = 3):
         return []
 
 
+def purge_stale_tags_from_json(days_inactive: int = 90):
+    """
+    Remove stale approved tags from tags.json that haven't been seen recently.
+
+    Args:
+        days_inactive: Tags not seen in this many days are removed
+
+    Returns:
+        List of purged tag dicts
+    """
+    import os
+    import json
+
+    tags_file = os.path.join(os.path.dirname(__file__), "tags.json")
+    if not os.path.exists(tags_file):
+        return []
+
+    try:
+        from database import Database
+        db = Database()
+
+        # Get stale tags from DB
+        purged = db.purge_stale_approved_tags(days_inactive=days_inactive)
+        if not purged:
+            return []
+
+        # Remove them from tags.json
+        with open(tags_file, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        modified = False
+        for item in purged:
+            tag = item["tag"]
+            category = item["category"]
+            if category in config.get("categories", {}):
+                if tag in config["categories"][category]:
+                    config["categories"][category].remove(tag)
+                    modified = True
+            if category in config.get("keyword_mappings", {}):
+                if tag in config["keyword_mappings"][category]:
+                    del config["keyword_mappings"][category][tag]
+                    modified = True
+
+        if modified:
+            with open(tags_file, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+
+            global _tags_config, _tags_config_mtime
+            _tags_config = None
+            _tags_config_mtime = 0
+            logger.info(f"tags.json cleaned: purged {len(purged)} stale tag(s) not seen in {days_inactive} days")
+
+        return purged
+
+    except Exception as e:
+        logger.error(f"Error purging stale tags from tags.json: {e}")
+        return []
+
+
 def _persist_approved_tags_to_json(db):
     """
     Merge DB-approved tags into tags.json keyword_mappings and categories.
