@@ -81,6 +81,11 @@ class Config:
     API_DELAY_BETWEEN_REQUESTS = int(os.getenv("API_DELAY_BETWEEN_REQUESTS", "5"))
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
+    # Trending topic threshold: minimum number of articles in a topic
+    # for it to be marked as "trending" in the timeline.
+    # Higher = fewer trending topics (default: 2)
+    TRENDING_TOPIC_MIN_ARTICLES = int(os.getenv("TRENDING_TOPIC_MIN_ARTICLES", "2"))
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""

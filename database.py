@@ -75,6 +75,25 @@ class Database:
                     # Column already exists
                     pass
 
+                # Migration: Add latest_article_date column for proper topic timeline ordering
+                try:
+                    cursor.execute("ALTER TABLE topics ADD COLUMN latest_article_date TEXT")
+                    logger.info("Migration: Added latest_article_date column to topics table")
+                    # Backfill: compute from linked articles
+                    cursor.execute("""
+                        UPDATE topics
+                        SET latest_article_date = (
+                            SELECT MAX(a.date)
+                            FROM articles a
+                            JOIN article_topics at ON a.id = at.article_id
+                            WHERE at.topic_id = topics.id
+                        )
+                        WHERE latest_article_date IS NULL
+                    """)
+                    logger.info("Migration: Backfilled latest_article_date from linked articles")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
                 # Article-Topic mapping table
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS article_topics (
@@ -497,7 +516,8 @@ class Database:
 
     def add_article_to_topic(self, article_id: int, topic_id: int) -> bool:
         """
-        Link an article to a topic.
+        Link an article to a topic. Also updates the topic's latest_article_date
+        so topics can be ordered by their most recent article in the timeline.
 
         Args:
             article_id: Article ID
@@ -514,10 +534,23 @@ class Database:
                     VALUES (?, ?)
                 """, (article_id, topic_id))
                 conn.commit()
-                logger.debug(f"Article {article_id} linked to topic {topic_id}")
-                return True
+
+                # Update topic's latest_article_date to the max of current and article's date
+                cursor.execute("""
+                    UPDATE topics
+                    SET latest_article_date = (
+                        SELECT MAX(a.date)
+                        FROM articles a
+                        JOIN article_topics at ON a.id = at.article_id
+                        WHERE at.topic_id = ?
+                    )
+                    WHERE id = ?
+                """, (topic_id, topic_id))
+                conn.commit()
+
+                return cursor.rowcount > 0 or True  # INSERT OR IGNORE may return 0
         except sqlite3.Error as e:
-            logger.error(f"Error linking article to topic: {e}")
+            logger.error(f"Error adding article to topic: {e}")
             return False
 
     def get_topic_by_id(self, topic_id: int) -> dict:

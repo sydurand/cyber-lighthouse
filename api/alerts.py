@@ -2,6 +2,7 @@
 from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 import hashlib
+import sqlite3
 
 from database import Database
 from cache import get_cache
@@ -11,6 +12,7 @@ from utils import (
     _extract_tags_from_keywords_dynamic,
 )
 from export_utils import detect_severity
+from config import Config
 from .models import (
     AlertsListResponse,
     AlertResponse,
@@ -23,6 +25,39 @@ db = Database()
 cache = get_cache()
 
 
+def _get_trending_topic_map():
+    """
+    Build a mapping of article_id -> topic_id for topics that meet
+    the trending threshold (article_count >= TRENDING_TOPIC_MIN_ARTICLES).
+    Also returns topic_id -> latest_article_date for sort override.
+    """
+    trending_articles = {}  # article_id -> topic_id
+    topic_latest_dates = {}  # topic_id -> latest_article_date
+    try:
+        with sqlite3.connect(db.db_file) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            # Find topics with enough articles
+            cur.execute("""
+                SELECT t.id, t.latest_article_date, COUNT(at.article_id) as article_count
+                FROM topics t
+                JOIN article_topics at ON t.id = at.topic_id
+                GROUP BY t.id
+                HAVING article_count >= ?
+            """, (Config.TRENDING_TOPIC_MIN_ARTICLES,))
+            for row in cur.fetchall():
+                topic_id = row["id"]
+                topic_latest_dates[topic_id] = row["latest_article_date"]
+                # Get all article IDs in this topic
+                cur2 = conn.cursor()
+                cur2.execute("SELECT article_id FROM article_topics WHERE topic_id = ?", (topic_id,))
+                for art_row in cur2.fetchall():
+                    trending_articles[art_row["article_id"]] = topic_id
+    except Exception as e:
+        logger.debug(f"Failed to build trending topic map: {e}")
+    return trending_articles, topic_latest_dates
+
+
 @router.get("/alerts", response_model=AlertsListResponse)
 async def get_alerts(
     limit: int = Query(20, ge=1, le=10000),
@@ -33,6 +68,9 @@ async def get_alerts(
 ) -> AlertsListResponse:
     """
     Get latest articles (real-time alerts).
+
+    Articles in trending topics (multiple articles on same topic) are sorted
+    by the topic's latest article date and tagged with #Trending.
 
     Args:
         limit: Number of alerts to return (max 10000)
@@ -48,9 +86,19 @@ async def get_alerts(
         articles = db.get_all_articles()
         total_articles = len(articles)
 
-        articles_sorted = sorted(
-            articles, key=lambda x: x.get("date", ""), reverse=True
-        )
+        # Build trending topic map
+        trending_articles, topic_latest_dates = _get_trending_topic_map()
+
+        # Sort using topic's latest_article_date for trending topics,
+        # otherwise use the article's own date
+        def sort_key(article):
+            article_id = article.get("id", 0)
+            topic_id = trending_articles.get(article_id)
+            if topic_id:
+                return topic_latest_dates.get(topic_id, "")
+            return article.get("date", "")
+
+        articles_sorted = sorted(articles, key=sort_key, reverse=True)
 
         if date_from:
             articles_sorted = [a for a in articles_sorted if a.get("date", "") >= date_from]
@@ -84,6 +132,12 @@ async def get_alerts(
                     if tags:
                         _tag_cache[tags_cache_key] = tags
                         db.set_article_tags(article_id, tags)
+
+            # Add #Trending tag for articles in multi-article topics
+            topic_id = trending_articles.get(article_id)
+            if topic_id and "#Trending" not in tags:
+                tags.append("#Trending")
+                db.set_article_tags(article_id, tags)
 
             alert = AlertResponse(
                 id=article.get("id", 0),
