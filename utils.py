@@ -1041,6 +1041,26 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
                 if not all(kw in text for kw in ['vulnerability', 'patch', 'update']):
                     tags.append("#ThreatActor")
 
+    # 2b. Threat group tracking identifiers (UNC####, UAT####, TA####, FIN#, etc.)
+    # Microsoft UNC, Mandiant UAT, CrowdStrike TA, FIN groups, etc.
+    tracking_patterns = [
+        r'UNC(\d{3,5})',   # Microsoft: UNC1069
+        r'UAT(\d{4,5})',   # Mandiant: UAT10608
+        r'TA(\d{3,4})',    # CrowdStrike: TA505
+        r'FIN(\d{1,2})',   # FIN7, FIN12
+        r'STORM-(\d{4})',  # Microsoft Storm: STORM-0978
+    ]
+    for pattern in tracking_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            # Extract prefix and create tag
+            prefix_match = re.match(r'([A-Z]+)', pattern.replace(r'(\d{4})', ''), re.IGNORECASE)
+            if prefix_match:
+                prefix = prefix_match.group(1).upper()
+                tag_name = f"#{prefix}{match}"
+                if tag_name not in tags:
+                    tags.append(tag_name)
+
     # 3. Events & Impact - from generic patterns
     event_tags = ["#DataBreach", "#Incident", "#Patch", "#Disclosure", "#ThreatIntel", "#Exploit"]
     for tag_name in event_tags:
@@ -1096,12 +1116,15 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
             if tag in valid_tags:
                 tags.append(tag)
 
-    # Filter to controlled vocabulary only, but allow CVE-specific tags through
+    # Filter to controlled vocabulary only, but allow dynamic tags through
     def is_valid_tag(tag):
         if tag in valid_tags:
             return True
         # Allow CVE-specific tags: #CVE-YYYY-NNNNN
         if re.match(r'#CVE-\d{4}-\d{4,}', tag):
+            return True
+        # Allow threat actor tracking identifiers: #UNC1069, #UAT10608, #TA505, #FIN7, #STORM0978
+        if re.match(r'#(UNC\d{3,5}|UAT\d{4,5}|TA\d{3,4}|FIN\d{1,2}|STORM\d{4})', tag, re.IGNORECASE):
             return True
         return False
     
