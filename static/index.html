@@ -127,14 +127,8 @@
               </div>
             </div>
 
-            <!-- Theme Toggle -->
-            <button @click="toggleTheme" 
-                    class="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all duration-200">
-              <i :class="['fas', theme === 'dark' ? 'fa-sun' : 'fa-moon']"></i>
-            </button>
-
             <!-- Refresh -->
-            <button @click="refreshData" :disabled="isLoading" 
+            <button @click="refreshData" :disabled="isLoading"
                     class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
               <i class="fas fa-sync-alt" :class="{ 'animate-spin': isLoading }"></i>
               <span class="hidden sm:inline">Refresh</span>

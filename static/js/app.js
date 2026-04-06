@@ -33,7 +33,6 @@ const app = createApp({
     const newAlertsCount = ref(0);
     const previousAlertCount = ref(0);
     const toastMessages = ref([]);
-    const theme = ref(localStorage.getItem("theme") || "dark");
 
     // History pagination
     const historyPage = ref(1);
@@ -234,12 +233,6 @@ const app = createApp({
         newSet.add(index);
       }
       expandedAlerts.value = newSet;
-    };
-
-    const toggleTheme = () => {
-      theme.value = theme.value === "dark" ? "light" : "dark";
-      localStorage.setItem("theme", theme.value);
-      document.documentElement.classList.toggle("light-theme", theme.value === "light");
     };
 
     // Deduplication function
@@ -808,11 +801,6 @@ const app = createApp({
       // Poll task status every 60s
       setInterval(() => fetchTaskStatus(), 60000);
 
-      // Apply saved theme
-      if (theme.value === "light") {
-        document.documentElement.classList.add("light-theme");
-      }
-
       // Expose filterByTag globally for onclick handlers in rendered HTML
       window.filterByTag = filterByTag;
     });
@@ -843,7 +831,6 @@ const app = createApp({
       lastRefreshTime,
       newAlertsCount,
       toastMessages,
-      theme,
       historyPage,
       historyPageSize,
       historyDateFrom,
@@ -900,7 +887,6 @@ const app = createApp({
       toggleReportExpand,
       isAlertExpanded,
       toggleAlertExpand,
-      toggleTheme,
       showToast,
     };
   },
