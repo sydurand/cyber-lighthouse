@@ -107,20 +107,36 @@ class TaskScheduler:
         return result
 
     def trigger_daily_now(self) -> dict:
-        """Manually trigger daily summary."""
-        logger.info("Manual trigger: daily summary")
-        next_run = datetime.now() + timedelta(days=1)
-        self.daily_summary_status.next_run = next_run.isoformat()
-        self.daily_summary_status.mark_start(next_run)
+        """Manually trigger daily summary — runs in background thread."""
+        logger.info("Manual trigger: daily summary (background)")
+        self.daily_summary_status.mark_start(
+            datetime.now() + timedelta(minutes=2)
+        )
+        self.daily_summary_status.article_count = 0
+        self.daily_summary_status.last_result = "running"
+
+        # Run in background so API returns immediately
+        thread = threading.Thread(
+            target=self._daily_summary_background,
+            daemon=True,
+            name="manual-daily-summary"
+        )
+        thread.start()
+
+        return {"message": "Daily summary started", "status": "running"}
+
+    def _daily_summary_background(self):
+        """Run daily summary in a background thread and update status."""
         result = self._run_daily_summary_once()
 
         if result.get("error"):
             self.daily_summary_status.mark_error(result["error"])
         else:
             self.daily_summary_status.mark_complete(article_count=result.get("articles_count", 0))
-            self.daily_summary_status.next_run = datetime.now().replace(
-                hour=self.daily_summary_hour, minute=0, second=0, microsecond=0
-            ).isoformat()
+
+        self.daily_summary_status.next_run = datetime.now().replace(
+            hour=self.daily_summary_hour, minute=0, second=0, microsecond=0
+        ).isoformat()
 
         return result
 

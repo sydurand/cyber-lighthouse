@@ -331,8 +331,17 @@ const app = createApp({
         taskTriggerLoading.value = true;
         const result = await apiClient.triggerTask(task);
         showToast(result.message || `${task} triggered`, "success");
-        // Refresh task status after trigger
-        setTimeout(() => fetchTaskStatus(), 2000);
+
+        // Poll task status every 2 seconds until it finishes
+        const pollInterval = setInterval(async () => {
+          const status = await apiClient.getTaskStatus();
+          const taskStatus = status[task];
+          if (!taskStatus || taskStatus.last_result !== "running") {
+            clearInterval(pollInterval);
+            // Refresh all data (reports, stats, alerts) after completion
+            refreshData();
+          }
+        }, 2000);
       } catch (error) {
         console.error("Error triggering task:", error);
         showToast("Failed to trigger task", "error");

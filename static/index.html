@@ -386,6 +386,7 @@
                   <span class="text-sm font-semibold text-slate-300">Daily Summary</span>
                 </div>
                 <span :class="['px-2 py-0.5 text-xs rounded-full',
+                               taskStatus.daily_summary?.last_result === 'running' ? 'bg-yellow-500/20 text-yellow-300 animate-pulse' :
                                taskStatus.daily_summary?.last_result === 'success' ? 'bg-emerald-500/20 text-emerald-300' :
                                taskStatus.daily_summary?.last_result === 'error' ? 'bg-red-500/20 text-red-300' :
                                'bg-slate-500/20 text-slate-400']">
