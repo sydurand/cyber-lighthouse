@@ -200,11 +200,21 @@ def generate_rapid_alert_for_new_topic(title: str, content: str) -> str:
 Title: {title}
 Content: {content[:500]}
 
-Generate a brief security alert (2-3 sentences max) suitable for Teams notification.
+Generate a rapid security alert suitable for Teams notification.
 Format:
-🚨 THREAT: [Brief threat description]
-💥 IMPACT: [Who/What affected]
-🏷️ TAGS: [Security tags]"""
+
+🚨 THREAT: [3 lines max]
+  Line 1: What happened (threat type + severity)
+  Line 2: Technical context (CVE, affected systems, attack vector)
+  Line 3: Exploitation status (active/PoC/emerging)
+
+💥 IMPACT: [2 lines max]
+  Line 1: Who/what is affected
+  Line 2: Recommended action or urgency level
+
+🏷️ TAGS: [Security tags like #CVE-XXXX-YYYY, #Ransomware, #ZeroDay]
+
+Be concise but informative. Each line should be a complete sentence."""
 
         instruction = """You are a SOC analyst creating urgent threat alerts.
 Be concise and highlight the most critical information."""

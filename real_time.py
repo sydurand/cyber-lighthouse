@@ -89,10 +89,20 @@ def analyze_article_with_ai(title: str, content: str) -> str:
     prompt = f"Title: {title}\nContent: {content}"
 
     instruction = """You are a SOC analyst. Perform an ultra-fast alert analysis of this article.
-Provide ONLY this format, be very concise (1 line max per bullet point):
-🚨 **ALERT**: [Summary in 1 sentence]
-💥 **IMPACT**: [Who/What is affected]
-🏷️ **TAGS**: [#Ransomware, #CVE-XXXX, #Phishing...]"""
+Provide ONLY this format with the specified line limits:
+
+🚨 **ALERT**: [3 lines max]
+  Line 1: What happened (vulnerability/incident + severity/CVSS)
+  Line 2: Technical details (attack vector, CVE ID, affected versions)
+  Line 3: Exploitation status (active/PoC/theoretical, CISA KEV if applicable)
+
+💥 **IMPACT**: [2 lines max]
+  Line 1: Who/what is affected (systems, sectors, user count)
+  Line 2: Urgency level + mitigation (patch deadline, workaround)
+
+🏷️ **TAGS**: [#Ransomware, #CVE-XXXX-YYYY, #Phishing...]
+
+Be concise but informative. Each line should be a complete sentence."""
 
     try:
         logger.debug(f"Sending article to AI provider for analysis: {title[:50]}...")
@@ -107,10 +117,11 @@ Provide ONLY this format, be very concise (1 line max per bullet point):
         from utils import highlight_cves_in_text
         response_text = highlight_cves_in_text(response_text)
 
-        # Cache the original response (without markdown highlighting)
+        # Cache the response (with CVE highlighting applied)
         cache.set_analysis(title, content, response_text)
         call_counter.add_call()
 
+        logger.debug(f"✓ Analysis cached: {title[:50]}...")
         return response_text
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
