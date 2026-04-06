@@ -31,6 +31,20 @@ db = Database()
 cache = get_cache()
 call_counter = get_call_counter()
 
+# Cached version — read once at module load to avoid file descriptor leaks
+def _read_version() -> str:
+    import re
+    from pathlib import Path
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+    if pyproject_path.exists():
+        with open(pyproject_path, "r") as f:
+            match = re.search(r'version\s*=\s*"(\d+\.\d+\.\d+)"', f.read())
+            if match:
+                return match.group(1)
+    return "0.0.0"
+
+_APP_VERSION = _read_version()
+
 # Bookmarks storage (in-memory)
 bookmarks_db: Dict[int, Dict] = {}
 
@@ -156,17 +170,8 @@ async def get_system_status() -> SystemStatusResponse:
 
 @router.get("/version")
 async def get_version() -> dict:
-    """Get application version from pyproject.toml."""
-    import re
-    from pathlib import Path
-    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
-    version = "0.0.0"
-    if pyproject_path.exists():
-        with open(pyproject_path, "r") as f:
-            match = re.search(r'version\s*=\s*"(\d+\.\d+\.\d+)"', f.read())
-            if match:
-                version = match.group(1)
-    return {"version": version, "started_at": get_start_time_iso()}
+    """Get application version from cached pyproject.toml value."""
+    return {"version": _APP_VERSION, "started_at": get_start_time_iso()}
 
 
 @router.get("/bookmarks", response_model=list[BookmarkResponse])
