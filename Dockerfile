@@ -31,7 +31,7 @@ COPY --from=builder --chown=appuser:appuser /app/.venv ./.venv
 COPY --from=builder --chown=appuser:appuser /app .
 
 # Ensure runtime directories exist with correct ownership
-RUN mkdir -p cache logs reports && chown -R appuser:appuser cache logs reports
+RUN mkdir -p cache logs reports .cache && chown -R appuser:appuser cache logs reports .cache
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

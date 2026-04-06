@@ -8,7 +8,6 @@ __pycache__
 cache/
 logs/
 reports/
-static/
 tests/
 tests-requirements.txt
 *.egg-info
