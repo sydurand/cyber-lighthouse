@@ -318,14 +318,15 @@ def _ai_verify_similarity(title1: str, content1: str, title2: str, content2: str
     try:
         from ai_client import get_ai_client
         from optimization import get_call_counter
-        
+
         # Check rate limit before making API call
         call_counter = get_call_counter()
         if not call_counter.can_make_call():
             logger.debug("AI clustering verification skipped (rate limit)")
             return False
-        
-        ai_client = get_ai_client()
+
+        # Use configured realtime provider
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
         
         prompt = f"""Determine if these two articles are about the SAME specific security incident or vulnerability.
 
