@@ -134,7 +134,11 @@ def archive_report_locally(markdown_text):
 
 
 def clean_old_topics(hours_limit=72):
-    """Removes topics older than specified hours to keep database manageable."""
+    """Removes old INACTIVE topics to keep database manageable.
+    
+    Topics that are still trending (>= TRENDING_TOPIC_MIN_ARTICLES articles)
+    are preserved regardless of age.
+    """
     limit_date = (datetime.now() - timedelta(hours=hours_limit)).strftime("%Y-%m-%d")
     removed_count = 0
 
@@ -142,13 +146,19 @@ def clean_old_topics(hours_limit=72):
         import sqlite3
         with sqlite3.connect(db.db_file) as conn:
             cursor = conn.cursor()
-            # Get topics with articles older than limit
+            # Get topics with articles older than limit, EXCEPT trending topics
             cursor.execute("""
                 SELECT DISTINCT t.id FROM topics t
                 JOIN article_topics at ON t.id = at.topic_id
                 JOIN articles a ON at.article_id = a.id
                 WHERE a.created_at < ?
-            """, (limit_date,))
+                AND t.id NOT IN (
+                    SELECT t2.id FROM topics t2
+                    JOIN article_topics at2 ON t2.id = at2.topic_id
+                    GROUP BY t2.id
+                    HAVING COUNT(at2.article_id) >= ?
+                )
+            """, (limit_date, Config.TRENDING_TOPIC_MIN_ARTICLES))
 
             old_topic_ids = [row[0] for row in cursor.fetchall()]
 
@@ -163,7 +173,7 @@ def clean_old_topics(hours_limit=72):
                 conn.commit()
                 removed_count = len(old_topic_ids)
 
-        logger.info(f"Database cleaned: {removed_count} old topics marked (older than {hours_limit}h)")
+        logger.info(f"Database cleaned: {removed_count} old INACTIVE topics marked (older than {hours_limit}h). Trending topics preserved.")
 
     except Exception as e:
         logger.error(f"Error cleaning old topics: {e}")
