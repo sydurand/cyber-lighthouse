@@ -249,6 +249,55 @@ class Database:
             logger.error(f"Error adding tag to articles: {e}")
             return updated
 
+    def retroactive_tag_articles(self, tag: str, keywords: list) -> int:
+        """
+        Find all articles matching a tag's keywords and apply the tag.
+        Searches both title and content columns.
+
+        Args:
+            tag: Tag to apply (e.g., "#Revil")
+            keywords: List of keyword strings to match against
+
+        Returns:
+            Number of articles tagged
+        """
+        import json
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+
+                # Build OR query for all keywords against title and content
+                conditions = []
+                params = []
+                for kw in keywords:
+                    conditions.append("title LIKE ? OR content LIKE ?")
+                    params.extend([f"%{kw}%", f"%{kw}%"])
+
+                where_clause = " OR ".join(conditions)
+                cursor.execute(f"""
+                    SELECT id, tags_json FROM articles WHERE {where_clause}
+                """, params)
+
+                rows = cursor.fetchall()
+                updated = 0
+                for article_id, existing_tags_json in rows:
+                    existing = json.loads(existing_tags_json) if existing_tags_json else []
+                    if tag not in existing:
+                        existing.append(tag)
+                        cursor.execute(
+                            "UPDATE articles SET tags_json = ? WHERE id = ?",
+                            (json.dumps(existing), article_id)
+                        )
+                        updated += 1
+
+                conn.commit()
+                if updated:
+                    logger.info(f"Retroactively tagged {updated} additional articles with {tag}")
+                return updated
+        except sqlite3.Error as e:
+            logger.error(f"Error in retroactive tagging: {e}")
+            return 0
+
     def get_unprocessed_articles(self) -> list:
         """Get all articles not yet processed for daily synthesis."""
         try:
@@ -687,6 +736,8 @@ class Database:
     def auto_approve_tags(self, min_count: int = 3, category_hint: str = None) -> list:
         """
         Auto-approve suggested tags that have reached a minimum mention count.
+        Retroactively applies the tag to all articles that originally triggered it,
+        then scans the full article database for additional matches.
 
         Tags approved this way are marked 'approved' in the DB and their names
         are returned so the caller can persist them to tags.json.
@@ -696,33 +747,74 @@ class Database:
             category_hint: Optional category to assign (e.g., "Threat_Actors")
 
         Returns:
-            List of tag names that were auto-approved
+            List of dicts with 'tag', 'category', 'articles_updated', and 'retroactive_count' keys
         """
         import json
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    SELECT id, tag, category FROM suggested_tags
+                    SELECT id, tag, category, article_ids FROM suggested_tags
                     WHERE status = 'pending' AND article_count >= ?
                 """, (min_count,))
                 candidates = cursor.fetchall()
 
                 approved = []
-                for tag_id, tag, existing_category in candidates:
+                for tag_id, tag, existing_category, ids_json in candidates:
                     category = category_hint or existing_category or "Threat_Actors"
                     cursor.execute("""
                         UPDATE suggested_tags
                         SET status = 'approved', category = ?
                         WHERE id = ?
                     """, (category, tag_id))
-                    approved.append({"tag": tag, "category": category})
+
+                    # 1. Apply tag to original suggestion articles
+                    article_ids = json.loads(ids_json) if ids_json else []
+                    articles_updated = 0
+                    if article_ids:
+                        articles_updated = self.add_tag_to_articles(article_ids, tag)
+                        logger.info(f"Retroactively applied #{tag} to {articles_updated} original article(s)")
+
+                    # 2. Scan all articles for keyword matches
+                    retroactive = 0
+                    keyword_mappings = self._get_keyword_for_tag(tag)
+                    if keyword_mappings:
+                        retroactive = self.retroactive_tag_articles(tag, keyword_mappings)
+                        logger.info(f"Retroactively scanned: {retroactive} additional articles matched #{tag}")
+
+                    approved.append({
+                        "tag": tag,
+                        "category": category,
+                        "articles_updated": articles_updated,
+                        "retroactive_count": retroactive,
+                    })
                     logger.info(f"Auto-approved tag: {tag} (count threshold met, category: {category})")
 
                 conn.commit()
                 return approved
         except sqlite3.Error as e:
             logger.error(f"Error auto-approving tags: {e}")
+            return []
+
+    def _get_keyword_for_tag(self, tag: str) -> list:
+        """Get keyword list for a tag from tags.json (for retroactive scanning)."""
+        import json
+        import os
+        tags_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tags.json")
+        if not os.path.exists(tags_file):
+            return []
+        try:
+            with open(tags_file, "r") as f:
+                config = json.load(f)
+            # Search all categories in keyword_mappings
+            for cat_mapping in config.get("keyword_mappings", {}).values():
+                if tag in cat_mapping:
+                    return cat_mapping[tag]
+            # Fallback: use tag name without # as keyword
+            if tag.startswith("#"):
+                return [tag[1:].lower()]
+            return [tag.lower()]
+        except Exception:
             return []
 
     def get_approved_tags_for_persistence(self) -> dict:

@@ -500,7 +500,7 @@ def auto_approve_and_persist_tags(min_count: int = 3):
 def _persist_approved_tags_to_json(db):
     """
     Merge DB-approved tags into tags.json keyword_mappings and categories.
-    Only adds tags that aren't already present.
+    Enforces a maximum tag count per category — least-used tags are pruned.
     """
     import os
     import json
@@ -508,6 +508,9 @@ def _persist_approved_tags_to_json(db):
     tags_file = os.path.join(os.path.dirname(__file__), "tags.json")
     if not os.path.exists(tags_file):
         return
+
+    # Max tags per category in the controlled vocabulary (keeps the list manageable)
+    MAX_TAGS_PER_CATEGORY = 20
 
     try:
         with open(tags_file, "r", encoding="utf-8") as f:
@@ -541,6 +544,23 @@ def _persist_approved_tags_to_json(db):
                     keyword = tag[1:].lower()  # Remove # prefix
                     config["keyword_mappings"][category][tag] = [keyword]
                     modified = True
+
+            # Enforce max tags per category — prune least-used (those without DB-approved status)
+            if len(config["categories"][category]) > MAX_TAGS_PER_CATEGORY:
+                approved_set = set(tags)
+                current = config["categories"][category]
+                # Keep approved tags first, then prune unapproved from the end
+                keep = [t for t in current if t in approved_set]
+                remainder = [t for t in current if t not in approved_set]
+                keep.extend(remainder[: MAX_TAGS_PER_CATEGORY - len(keep)])
+                pruned = set(current) - set(keep)
+
+                config["categories"][category] = keep
+                for tag_name in pruned:
+                    config["keyword_mappings"][category].pop(tag_name, None)
+
+                modified = True
+                logger.info(f"Pruned {len(pruned)} tag(s) from {category} to stay under {MAX_TAGS_PER_CATEGORY} limit: {pruned}")
 
         if modified:
             # Write back to tags.json
