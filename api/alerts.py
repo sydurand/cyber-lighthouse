@@ -29,10 +29,12 @@ def _get_trending_topic_map():
     """
     Build a mapping of article_id -> topic_id for topics that meet
     the trending threshold (article_count >= TRENDING_TOPIC_MIN_ARTICLES).
-    Also returns topic_id -> latest_article_date for sort override.
+    Also returns topic_id -> latest_article_date for sort override
+    and topic_id -> list of related article source info.
     """
     trending_articles = {}  # article_id -> topic_id
     topic_latest_dates = {}  # topic_id -> latest_article_date
+    topic_articles = {}  # topic_id -> list of {source, title, link, date, id}
     try:
         with sqlite3.connect(db.db_file) as conn:
             conn.row_factory = sqlite3.Row
@@ -48,14 +50,28 @@ def _get_trending_topic_map():
             for row in cur.fetchall():
                 topic_id = row["id"]
                 topic_latest_dates[topic_id] = row["latest_article_date"]
-                # Get all article IDs in this topic
+                # Get all articles in this topic
                 cur2 = conn.cursor()
-                cur2.execute("SELECT article_id FROM article_topics WHERE topic_id = ?", (topic_id,))
+                cur2.execute("""
+                    SELECT a.id, a.title, a.source, a.link, a.date
+                    FROM articles a
+                    JOIN article_topics at ON a.id = at.article_id
+                    WHERE at.topic_id = ?
+                    ORDER BY a.date DESC
+                """, (topic_id,))
+                related = []
                 for art_row in cur2.fetchall():
-                    trending_articles[art_row["article_id"]] = topic_id
+                    trending_articles[art_row["id"]] = topic_id
+                    related.append({
+                        "id": art_row["id"],
+                        "title": art_row["title"],
+                        "source": art_row["source"],
+                        "link": art_row["link"],
+                    })
+                topic_articles[topic_id] = related
     except Exception as e:
         logger.debug(f"Failed to build trending topic map: {e}")
-    return trending_articles, topic_latest_dates
+    return trending_articles, topic_latest_dates, topic_articles
 
 
 @router.get("/alerts", response_model=AlertsListResponse)
@@ -87,7 +103,7 @@ async def get_alerts(
         total_articles = len(articles)
 
         # Build trending topic map
-        trending_articles, topic_latest_dates = _get_trending_topic_map()
+        trending_articles, topic_latest_dates, topic_articles = _get_trending_topic_map()
 
         # Sort using topic's latest_article_date for trending topics,
         # otherwise use the article's own date
@@ -139,6 +155,14 @@ async def get_alerts(
                 tags.append("#Trending")
                 db.set_article_tags(article_id, tags)
 
+            # Include related sources from the same topic
+            topic_sources = []
+            if topic_id:
+                topic_sources = [
+                    s for s in topic_articles.get(topic_id, [])
+                    if s["id"] != article_id
+                ]
+
             alert = AlertResponse(
                 id=article.get("id", 0),
                 source=article.get("source", "Unknown"),
@@ -148,6 +172,7 @@ async def get_alerts(
                 analysis=display_analysis,
                 tags=tags,
                 severity=detect_severity(title, display_analysis or "", tags),
+                topic_sources=topic_sources,
             )
             all_alerts.append(alert)
 

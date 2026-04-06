@@ -34,6 +34,7 @@ class AlertResponse(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Security tags extracted from alert")
     timestamp: datetime = Field(default_factory=datetime.now)
     severity: str = Field(default="medium", description="Alert severity level")
+    topic_sources: List[dict] = Field(default_factory=list, description="Related articles from same trending topic")
 
     class Config:
         from_attributes = True
