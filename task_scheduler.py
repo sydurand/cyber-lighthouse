@@ -95,7 +95,15 @@ class TaskScheduler:
     def trigger_realtime_now(self) -> dict:
         """Manually trigger real-time monitoring."""
         logger.info("Manual trigger: real-time monitoring")
+        next_run = datetime.now() + timedelta(seconds=self.realtime_interval)
+        self.realtime_status.mark_start(next_run)
         result = self._run_realtime_once()
+
+        if result.get("error"):
+            self.realtime_status.mark_error(result["error"])
+        else:
+            self.realtime_status.mark_complete(article_count=result.get("new_articles", 0))
+
         return result
 
     def trigger_daily_now(self) -> dict:
