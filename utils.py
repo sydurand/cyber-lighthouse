@@ -381,12 +381,17 @@ AVAILABLE TAGS (use ONLY these):
 
 INSTRUCTIONS:
 1. Select 2-{max_tags} tags that best describe this article
-2. IMPORTANT: If the article mentions ransomware groups, threat actors, or malware families NOT in the available tags list, suggest them as new tags prefixed with # (e.g., #Revil, #GandCrab)
+2. If the article mentions concepts NOT in the available tags list, suggest them as new tags prefixed with #. This includes:
+   - New ransomware groups, threat actors, or APT campaigns (e.g., #Revil, #GandCrab)
+   - New attack techniques or TTPs (e.g., #SupplyChainAttack, #RogueAccessPoint)
+   - Notable vulnerabilities or exploit types (e.g., #SQLInjection, #Deserialization)
+   - Target sectors not yet covered (e.g., #Education, #Energy)
 3. Return one tag per line, prefixed with #
 4. Do NOT include explanations
-5. Prioritize: Threat Actors > TTPs > Impact > Sectors"""
+5. Prioritize: Threat Actors > TTPs > Impact > Sectors
+6. Suggest tags only if they represent a meaningful, recurring trend — not one-off mentions"""
 
-        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for emerging threats not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
+        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
@@ -503,6 +508,7 @@ def _persist_approved_tags_to_json(db):
     Enforces a maximum tag count per category — least-used tags are pruned.
     """
     import os
+    import re
     import json
 
     tags_file = os.path.join(os.path.dirname(__file__), "tags.json")
@@ -541,7 +547,9 @@ def _persist_approved_tags_to_json(db):
 
                 # Add to keyword_mappings with the tag name as keyword (lowercase, without #)
                 if tag not in config["keyword_mappings"][category]:
-                    keyword = tag[1:].lower()  # Remove # prefix
+                    keyword = tag[1:]  # Remove # prefix
+                    # Split CamelCase into words for better matching
+                    keyword = re.sub(r'([a-z])([A-Z])', r'\1 \2', keyword).lower()
                     config["keyword_mappings"][category][tag] = [keyword]
                     modified = True
 

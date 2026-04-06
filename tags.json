@@ -1,5 +1,5 @@
 {
-  "description": "Controlled tag vocabulary for Cyber-Lighthouse trend tracking. New threat groups are auto-discovered by AI and auto-approved after 3+ mentions, then persisted here.",
+  "description": "Controlled tag vocabulary for Cyber-Lighthouse trend tracking. AI discovers new tags across all categories — threat actors, TTPs, vulnerabilities, target sectors — and auto-approves them after 3+ mentions, then persists here.",
   "max_tags_per_article": 5,
   "categories": {
     "TTPs": [
