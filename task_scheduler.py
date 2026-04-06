@@ -192,6 +192,16 @@ class TaskScheduler:
 
             result = process_new_articles() or {}
             logger.info(f"Real-time run complete: {result}")
+
+            # Check for newly auto-approved tags after processing articles
+            try:
+                from utils import auto_approve_and_persist_tags
+                new_tags = auto_approve_and_persist_tags(min_count=3)
+                if new_tags:
+                    result["new_tags_approved"] = [t["tag"] for t in new_tags]
+            except Exception as e:
+                logger.debug(f"Auto-approval check failed: {e}")
+
             return {
                 "new_articles": result.get("new_articles", 0),
                 "grouped_articles": result.get("articles_queued", 0),

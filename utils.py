@@ -367,20 +367,26 @@ def extract_tags_with_ai(title: str, analysis: str) -> list:
         max_tags = get_max_tags()
         allowed_tags = ", ".join(sorted(valid_tags))
 
+        # Extract actor names from current controlled vocab so AI can reference them
+        actor_tags = [t for t in valid_tags if t.startswith("#") and t not in ("#APT",)]
+
         prompt = f"""Article Title: {title}
 
 Analysis: {analysis[:500]}
 
-Select 2-{MAX_TAGS_PER_ARTICLE} tags from this EXACT list that best describe the article:
+You are tagging a cybersecurity threat intelligence article.
+
+AVAILABLE TAGS (use ONLY these):
 {allowed_tags}
 
-Rules:
-- Return ONLY the tag names, one per line
-- Do NOT invent new tags
-- Do NOT include explanations
-- Pick tags that accurately describe the article content"""
+INSTRUCTIONS:
+1. Select 2-{max_tags} tags that best describe this article
+2. IMPORTANT: If the article mentions ransomware groups, threat actors, or malware families NOT in the available tags list, suggest them as new tags prefixed with # (e.g., #Revil, #GandCrab)
+3. Return one tag per line, prefixed with #
+4. Do NOT include explanations
+5. Prioritize: Threat Actors > TTPs > Impact > Sectors"""
 
-        instruction = f"""You are a cybersecurity analyst tagging threat intelligence articles. Select tags ONLY from the provided controlled vocabulary list. Return 2-{MAX_TAGS_PER_ARTICLE} tags maximum, one per line, exact format #TagName."""
+        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for emerging threats not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
@@ -452,6 +458,103 @@ Rules:
         fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
         _tag_cache[cache_key] = fallback_tags
         return fallback_tags
+
+
+# ============================================================================
+# AUTO-APPROVAL & PERSISTENCE FOR AI-DISCOVERED TAGS
+# ============================================================================
+
+def auto_approve_and_persist_tags(min_count: int = 3):
+    """
+    Check for suggested tags that have reached the auto-approval threshold.
+    Auto-approve them and persist new tags to tags.json.
+
+    Called periodically by the scheduler and after tag suggestion events.
+
+    Args:
+        min_count: Minimum article count for auto-approval
+
+    Returns:
+        List of newly approved tag dicts with 'tag' and 'category' keys
+    """
+    try:
+        from database import Database
+        db = Database()
+
+        # Auto-approve tags that meet the threshold
+        approved = db.auto_approve_tags(min_count=min_count)
+        if not approved:
+            return []
+
+        # Persist approved tags to tags.json
+        _persist_approved_tags_to_json(db)
+
+        logger.info(f"Auto-approved and persisted {len(approved)} new tag(s): {[a['tag'] for a in approved]}")
+        return approved
+
+    except Exception as e:
+        logger.error(f"Error in auto_approve_and_persist_tags: {e}")
+        return []
+
+
+def _persist_approved_tags_to_json(db):
+    """
+    Merge DB-approved tags into tags.json keyword_mappings and categories.
+    Only adds tags that aren't already present.
+    """
+    import os
+    import json
+
+    tags_file = os.path.join(os.path.dirname(__file__), "tags.json")
+    if not os.path.exists(tags_file):
+        return
+
+    try:
+        with open(tags_file, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        approved_tags = db.get_approved_tags_for_persistence()
+        if not approved_tags:
+            return
+
+        modified = False
+
+        for category, tags in approved_tags.items():
+            # Ensure category exists in categories list
+            if category not in config.get("categories", {}):
+                config["categories"][category] = []
+
+            # Ensure category exists in keyword_mappings
+            if "keyword_mappings" not in config:
+                config["keyword_mappings"] = {}
+            if category not in config["keyword_mappings"]:
+                config["keyword_mappings"][category] = {}
+
+            for tag in tags:
+                # Add to categories list if not present
+                if tag not in config["categories"][category]:
+                    config["categories"][category].append(tag)
+                    modified = True
+
+                # Add to keyword_mappings with the tag name as keyword (lowercase, without #)
+                if tag not in config["keyword_mappings"][category]:
+                    keyword = tag[1:].lower()  # Remove # prefix
+                    config["keyword_mappings"][category][tag] = [keyword]
+                    modified = True
+
+        if modified:
+            # Write back to tags.json
+            with open(tags_file, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+
+            # Clear the in-memory cache so it reloads
+            global _tags_config, _tags_config_mtime
+            _tags_config = None
+            _tags_config_mtime = 0
+            logger.info(f"tags.json updated with {sum(len(t) for t in approved_tags.values())} approved tag(s)")
+
+    except Exception as e:
+        logger.error(f"Failed to persist approved tags to tags.json: {e}")
 
 
 # ============================================================================
@@ -578,13 +681,12 @@ def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
             if tag in valid_tags:
                 tags.append(tag)
 
-    # 2. Attacker groups - from keyword mappings
+    # 2. Attacker groups - from keyword mappings (detect ALL matching groups)
     actor_mapping = keyword_mappings.get("Threat_Actors", {})
     for tag, keywords in actor_mapping.items():
         if any(kw in text for kw in keywords):
             if tag in valid_tags:
                 tags.append(tag)
-                break  # Only one attacker group tag
 
     # Generic APT detection
     if not any(t in tags for t in actor_mapping.keys()):

@@ -684,6 +684,74 @@ class Database:
             logger.error(f"Error getting suggested tags: {e}")
             return []
 
+    def auto_approve_tags(self, min_count: int = 3, category_hint: str = None) -> list:
+        """
+        Auto-approve suggested tags that have reached a minimum mention count.
+
+        Tags approved this way are marked 'approved' in the DB and their names
+        are returned so the caller can persist them to tags.json.
+
+        Args:
+            min_count: Minimum article_count required for auto-approval
+            category_hint: Optional category to assign (e.g., "Threat_Actors")
+
+        Returns:
+            List of tag names that were auto-approved
+        """
+        import json
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, tag, category FROM suggested_tags
+                    WHERE status = 'pending' AND article_count >= ?
+                """, (min_count,))
+                candidates = cursor.fetchall()
+
+                approved = []
+                for tag_id, tag, existing_category in candidates:
+                    category = category_hint or existing_category or "Threat_Actors"
+                    cursor.execute("""
+                        UPDATE suggested_tags
+                        SET status = 'approved', category = ?
+                        WHERE id = ?
+                    """, (category, tag_id))
+                    approved.append({"tag": tag, "category": category})
+                    logger.info(f"Auto-approved tag: {tag} (count threshold met, category: {category})")
+
+                conn.commit()
+                return approved
+        except sqlite3.Error as e:
+            logger.error(f"Error auto-approving tags: {e}")
+            return []
+
+    def get_approved_tags_for_persistence(self) -> dict:
+        """
+        Get all approved suggested tags organized by category for tags.json persistence.
+
+        Returns:
+            Dict mapping categories to lists of tag names
+        """
+        import json
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT tag, category FROM suggested_tags
+                    WHERE status = 'approved'
+                    ORDER BY article_count DESC
+                """)
+                result = {}
+                for tag, category in cursor.fetchall():
+                    cat = category or "Threat_Actors"
+                    if cat not in result:
+                        result[cat] = []
+                    result[cat].append(tag)
+                return result
+        except sqlite3.Error as e:
+            logger.error(f"Error getting approved tags: {e}")
+            return {}
+
     def approve_tag(self, tag_id: int, category: str = None) -> bool:
         """
         Approve a suggested tag and add it to the controlled vocabulary.

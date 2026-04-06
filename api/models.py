@@ -16,6 +16,7 @@ class ArticleResponse(BaseModel):
     analysis: Optional[str] = None
     processed_for_daily: bool
     severity: str = Field(default="medium", description="Alert severity level")
+    tags: List[str] = Field(default_factory=list, description="Security tags extracted from article")
 
     class Config:
         from_attributes = True

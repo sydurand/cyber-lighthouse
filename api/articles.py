@@ -17,6 +17,7 @@ cache = get_cache()
 async def search_articles(
     search: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
+    tag: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=10000),
@@ -28,6 +29,7 @@ async def search_articles(
     Args:
         search: Search term in title or content
         source: Filter by source
+        tag: Filter by tag (case-insensitive partial match)
         date_from: Start date (YYYY-MM-DD)
         date_to: End date (YYYY-MM-DD)
         limit: Number of articles to return (max 10000)
@@ -51,6 +53,13 @@ async def search_articles(
         if source:
             filtered = [a for a in filtered if a.get("source") == source]
 
+        if tag:
+            tag_lower = tag.lower()
+            filtered = [
+                a for a in filtered
+                if any(tag_lower in t.lower() for t in (db.get_article_tags(a.get("id", 0)) or []))
+            ]
+
         if date_from:
             filtered = [a for a in filtered if a.get("date", "") >= date_from]
 
@@ -65,6 +74,7 @@ async def search_articles(
             analysis = article.get("analysis") or cache.get_analysis(
                 article.get("title", ""), article.get("content", "")
             )
+            tags = db.get_article_tags(article.get("id", 0)) or []
             article_responses.append(ArticleResponse(
                 id=article.get("id", 0),
                 source=article.get("source", "Unknown"),
@@ -74,6 +84,8 @@ async def search_articles(
                 date=article.get("date", ""),
                 analysis=analysis,
                 processed_for_daily=article.get("processed_for_daily", False),
+                severity=article.get("severity", "medium"),
+                tags=tags,
             ))
 
         return ArticlesListResponse(

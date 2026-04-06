@@ -1,5 +1,5 @@
 {
-  "description": "Controlled tag vocabulary for Cyber-Lighthouse trend tracking",
+  "description": "Controlled tag vocabulary for Cyber-Lighthouse trend tracking. New threat groups are auto-discovered by AI and auto-approved after 3+ mentions, then persisted here.",
   "max_tags_per_article": 5,
   "categories": {
     "TTPs": [
@@ -24,7 +24,11 @@
       "#Sandworm",
       "#FancyBear",
       "#CozyBear",
-      "#Clop"
+      "#Clop",
+      "#Revil",
+      "#GandCrab",
+      "#Conti",
+      "#BlackBasta"
     ],
     "CVEs_Vulnerabilities": [
       "#CVE",
@@ -73,7 +77,11 @@
       "#Sandworm": ["sandworm"],
       "#FancyBear": ["fancy bear", "apt28", "sofacy", "strontium"],
       "#CozyBear": ["cozy bear", "apt29", "noblebaron", "cozyduke"],
-      "#Clop": ["clop", "cl0p"]
+      "#Clop": ["clop", "cl0p"],
+      "#Revil": ["revil", "sodinokibi"],
+      "#GandCrab": ["gandcrab", "gand crab"],
+      "#Conti": ["conti"],
+      "#BlackBasta": ["blackbasta", "black basta"]
     },
     "Targets_Sectors": {
       "#CriticalInfra": ["critical infrastructure", "power grid", "utility", "scada", "ics", "industrial control"],

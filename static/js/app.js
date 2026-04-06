@@ -279,7 +279,7 @@ const app = createApp({
             apiClient.getReports(),
             apiClient.getStatistics(),
             apiClient.getSystemStatus(),
-            apiClient.searchArticles({ limit: 10000 }),
+            apiClient.searchArticles({ limit: 10000, tag: filterTag.value || undefined }),
             apiClient.getBookmarks(),
           ]);
 
@@ -448,6 +448,7 @@ const app = createApp({
       if (currentTab.value !== "articles") {
         currentTab.value = "articles";
       }
+      refreshData();
     };
 
     const filterBySeverity = (severity) => {

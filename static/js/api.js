@@ -68,6 +68,7 @@ class APIClient {
       offset: options.offset || 0,
       ...(options.search && { search: options.search }),
       ...(options.source && { source: options.source }),
+      ...(options.tag && { tag: options.tag }),
       ...(options.date_from && { date_from: options.date_from }),
       ...(options.date_to && { date_to: options.date_to }),
     });
