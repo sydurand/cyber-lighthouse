@@ -383,15 +383,18 @@ INSTRUCTIONS:
 1. Select 2-{max_tags} tags that best describe this article
 2. If the article mentions concepts NOT in the available tags list, suggest them as new tags prefixed with #. This includes:
    - New ransomware groups, threat actors, or APT campaigns (e.g., #Revil, #GandCrab)
+   - Threat cluster names or tracking identifiers (e.g., #UAT10608, #APT41, #FIN7)
+   - Malware family names (e.g., #Emotet, #Conti)
    - New attack techniques or TTPs (e.g., #SupplyChainAttack, #RogueAccessPoint)
    - Notable vulnerabilities or exploit types (e.g., #SQLInjection, #Deserialization)
    - Target sectors not yet covered (e.g., #Education, #Energy)
 3. Return one tag per line, prefixed with #
 4. Do NOT include explanations
 5. Prioritize: Threat Actors > TTPs > Impact > Sectors
-6. Suggest tags only if they represent a meaningful, recurring trend — not one-off mentions"""
+6. Suggest tags only if they represent a meaningful, recurring trend — not one-off mentions
+7. For cluster/tracking IDs, normalize them: remove hyphens/spaces, e.g. "UAT-10608" → #UAT10608"""
 
-        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
+        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, threat clusters (e.g. #UAT10608), tracking identifiers, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. Return tags only, one per line, starting with #."""
 
         logger.debug(f"Extracting tags with AI for: {title[:50]}...")
         response_text = ai_client.generate_content(
