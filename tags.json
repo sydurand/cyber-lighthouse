@@ -28,7 +28,8 @@
       "#Revil",
       "#GandCrab",
       "#Conti",
-      "#BlackBasta"
+      "#BlackBasta",
+      "#Medusa"
     ],
     "CVEs_Vulnerabilities": [
       "#CVE",
@@ -81,7 +82,8 @@
       "#Revil": ["revil", "sodinokibi"],
       "#GandCrab": ["gandcrab", "gand crab"],
       "#Conti": ["conti"],
-      "#BlackBasta": ["blackbasta", "black basta"]
+      "#BlackBasta": ["blackbasta", "black basta"],
+      "#Medusa": ["medusa ransomware", "medusa group"]
     },
     "Targets_Sectors": {
       "#CriticalInfra": ["critical infrastructure", "power grid", "utility", "scada", "ics", "industrial control"],
