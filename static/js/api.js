@@ -144,6 +144,13 @@ class APIClient {
       body: JSON.stringify({ task }),
     });
   }
+
+  /**
+   * Get application version
+   */
+  async getVersion() {
+    return this.fetch("/version");
+  }
 }
 
 // Export for Vue

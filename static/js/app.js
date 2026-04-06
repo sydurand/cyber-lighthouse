@@ -15,6 +15,7 @@ const app = createApp({
     const statistics = ref(null);
     const systemStatus = ref(null);
     const allArticles = ref([]);
+    const appVersion = ref("");
     const searchQuery = ref("");
     const filterSource = ref("");
     const filterTag = ref("");
@@ -789,6 +790,11 @@ const app = createApp({
       autoRefresh();
       document.addEventListener("keydown", handleKeyboard);
 
+      // Fetch app version
+      apiClient.getVersion().then((data) => {
+        appVersion.value = data.version || "";
+      }).catch(() => {});
+
       // Poll task status every 60s
       setInterval(() => fetchTaskStatus(), 60000);
 
@@ -809,6 +815,7 @@ const app = createApp({
       statistics,
       systemStatus,
       allArticles,
+      appVersion,
       searchQuery,
       filterSource,
       filterTag,
