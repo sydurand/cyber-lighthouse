@@ -13,7 +13,13 @@ class Database:
 
     def __init__(self, db_file: str = None):
         """Initialize database connection."""
-        self.db_file = db_file or Config.DATABASE_FILE
+        import os
+        raw_path = db_file or Config.DATABASE_FILE
+        # Make relative paths absolute to avoid thread working directory issues
+        if not os.path.isabs(raw_path):
+            self.db_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), raw_path)
+        else:
+            self.db_file = raw_path
         self._init_database()
 
     def _init_database(self):
