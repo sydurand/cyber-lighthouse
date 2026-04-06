@@ -22,10 +22,26 @@ def _get_embedding_model():
         with _embedding_lock:
             if _embedding_model is None:
                 try:
+                    import logging
+                    import warnings
                     from sentence_transformers import SentenceTransformer
                     model_name = Config.EMBEDDING_MODEL
                     logger.info(f"Loading embedding model: {model_name}")
+                    
+                    # Suppress all HuggingFace hub warnings (e.g., missing token)
+                    warnings.filterwarnings("ignore", message=".*HF_HUB_DISABLE_IMPLICIT_TOKEN.*")
+                    warnings.filterwarnings("ignore", message=".*unauthenticated requests.*")
+                    
+                    # Suppress transformers library logging
+                    transformers_logger = logging.getLogger("transformers.modeling_utils")
+                    original_level = transformers_logger.level
+                    transformers_logger.setLevel(logging.ERROR)
+                    
                     _embedding_model = SentenceTransformer(model_name)
+                    
+                    # Restore original log level
+                    transformers_logger.setLevel(original_level)
+                    
                     logger.info(f"Embedding model loaded successfully")
                 except Exception as e:
                     logger.warning(f"Failed to load embedding model: {e}. Falling back to keyword matching.")
