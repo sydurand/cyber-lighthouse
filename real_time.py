@@ -124,8 +124,41 @@ Be concise but informative. Each line should be a complete sentence."""
         logger.debug(f"✓ Analysis cached: {title[:50]}...")
         return response_text
     except Exception as e:
-        logger.error(f"AI analysis failed: {e}")
-        return f"Analysis unavailable: {e}"
+        logger.error(f"AI analysis failed for '{title[:50]}...': {e}")
+        
+        # Return user-friendly fallback instead of raw error
+        error_str = str(e).lower()
+        
+        # Check for common error types and provide appropriate message
+        if '404' in error_str or 'not found' in error_str:
+            return (
+                f"⏳ Analysis pending\n\n"
+                f"AI service temporarily unavailable. Article queued for processing.\n\n"
+                f"**Title**: {title}\n"
+                f"**Content preview**: {content[:200]}..."
+            )
+        elif 'timeout' in error_str or 'connection' in error_str:
+            return (
+                f"⏳ Analysis delayed\n\n"
+                f"AI service connection timeout. Will retry shortly.\n\n"
+                f"**Title**: {title}\n"
+                f"**Content preview**: {content[:200]}..."
+            )
+        elif 'rate limit' in error_str:
+            return (
+                f"⏳ Rate limited\n\n"
+                f"AI service quota exceeded. Analysis will resume when quota resets.\n\n"
+                f"**Title**: {title}\n"
+                f"**Content preview**: {content[:200]}..."
+            )
+        else:
+            # Generic fallback with article content
+            content_preview = f"\n\n**Content preview**: {content[:300]}..." if content else ""
+            return (
+                f"⏳ Analysis pending\n\n"
+                f"Article content is being processed. Analysis will be available shortly.\n\n"
+                f"**Title**: {title}{content_preview}"
+            )
 
 
 def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:

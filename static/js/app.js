@@ -705,6 +705,26 @@ const app = createApp({
     const renderAlertAnalysis = (content) => {
       if (!content) return "";
 
+      // Detect pending analysis messages and render with special styling
+      if (content.includes('⏳ Analysis')) {
+        let html = escapeHtml(content);
+        
+        // Style the pending message with amber/yellow indicator
+        html = html.replace(
+          /⏳ (Analysis pending|Analysis delayed|Rate limited)/g,
+          '<div class="flex items-center gap-2 mb-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">' +
+          '<i class="fas fa-hourglass-half text-amber-400 animate-pulse"></i>' +
+          '<span class="text-amber-300 font-semibold">$1</span>' +
+          '</div>'
+        );
+        
+        // Style the rest of the content
+        html = html.replace(/\*\*Title\*\*: (.+)/g, '<div class="ml-2"><p class="text-slate-300 text-sm"><strong class="text-slate-400">Title:</strong> $1</p>');
+        html = html.replace(/\*\*Content preview\*\*: (.+)/g, '<p class="text-slate-400 text-xs mt-2 line-clamp-3">$1</p></div>');
+        
+        return html;
+      }
+
       // Check if content has ALERT/IMPACT/TAGS format
       const hasStructuredFormat = content.includes('🚨') && content.includes('💥');
 
@@ -715,7 +735,7 @@ const app = createApp({
         // Format ALERT section
         html = html.replace(/🚨\s*\*\*ALERT\*\*:\s*/g, '<div class="mb-3"><div class="flex items-start gap-2 mb-1"><span class="text-red-400 font-bold text-xs uppercase tracking-wide flex-shrink-0">🚨 Alert</span></div><p class="text-slate-200 leading-relaxed">');
 
-        // Format IMPACT section  
+        // Format IMPACT section
         html = html.replace(/\n💥\s*\*\*IMPACT\*\*:\s*/g, '</p></div><div class="mb-3 pt-3 border-t border-slate-700/50"><div class="flex items-start gap-2 mb-1"><span class="text-orange-400 font-bold text-xs uppercase tracking-wide flex-shrink-0">💥 Impact</span></div><p class="text-slate-300 leading-relaxed">');
 
         // Remove TAGS section entirely (tags are shown in header)
