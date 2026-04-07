@@ -40,18 +40,6 @@ class AlertResponse(BaseModel):
         from_attributes = True
 
 
-class BookmarkResponse(BaseModel):
-    """Response model for bookmarked alerts."""
-
-    id: int
-    title: str
-    source: str
-    date: str
-    link: str
-    severity: str
-    bookmarked_at: datetime = Field(default_factory=datetime.now)
-
-
 class ReportResponse(BaseModel):
     """Response model for synthesis reports."""
 
@@ -186,12 +174,6 @@ class SeverityUpdate(BaseModel):
     """Request to manually update alert severity."""
 
     severity: str  # critical, high, medium, low
-
-
-class BookmarkToggle(BaseModel):
-    """Request to toggle bookmark."""
-
-    alert_id: int
 
 
 class TagSuggestionResponse(BaseModel):

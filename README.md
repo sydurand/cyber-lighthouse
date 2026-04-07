@@ -132,7 +132,7 @@ RSS Feeds → Scrape → AI Analysis → Topic Clustering → Teams Notification
 | `api/reports.py` | `/api/reports`, `/api/reports/{index}/toc`, `/api/export/report` |
 | `api/tags_routes.py` | `/api/tags`, `/api/tags/suggestions/*` |
 | `api/topics.py` | `/api/topics` (paginated) |
-| `api/system.py` | `/api/stats`, `/api/system`, `/api/version`, `/api/bookmarks/*`, `/api/export/alerts` |
+| `api/system.py` | `/api/stats`, `/api/system`, `/api/version`, `/api/export/alerts` |
 
 ## Database
 

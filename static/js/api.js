@@ -84,28 +84,6 @@ class APIClient {
   }
 
   /**
-   * Get bookmarks
-   */
-  async getBookmarks() {
-    return this.fetch("/bookmarks");
-  }
-
-  /**
-   * Toggle bookmark
-   */
-  async toggleBookmark(alertId, alertData = {}) {
-    const params = new URLSearchParams({
-      alert_id: alertId,
-      ...(alertData.title && { title: alertData.title }),
-      ...(alertData.source && { source: alertData.source }),
-      ...(alertData.date && { date: alertData.date }),
-      ...(alertData.link && { link: alertData.link }),
-      ...(alertData.severity && { severity: alertData.severity }),
-    });
-    return this.fetch(`/bookmarks/toggle?${params.toString()}`, { method: "POST" });
-  }
-
-  /**
    * Export alerts
    */
   async exportAlerts(format = "markdown", limit = 100) {

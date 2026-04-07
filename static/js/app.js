@@ -27,8 +27,6 @@ const app = createApp({
     const hasMoreAlerts = ref(true);
     const filterStats = ref(null);
     const trendingTags = ref({});
-    const bookmarks = ref([]);
-    const showBookmarksOnly = ref(false);
     const lastRefreshTime = ref(null);
     const newAlertsCount = ref(0);
     const previousAlertCount = ref(0);
@@ -139,7 +137,6 @@ const app = createApp({
 
     const alertsCount = computed(() => alerts.value.length);
     const reportsCount = computed(() => reports.value.length);
-    const bookmarksCount = computed(() => bookmarks.value.length);
 
     // Alerts pagination
     const alertsTotalPages = computed(() => Math.ceil(alertsTotalCount.value / alertsLimit.value) || 1);
@@ -267,14 +264,13 @@ const app = createApp({
       isLoading.value = true;
       try {
         const offset = (alertsPage.value - 1) * alertsLimit.value;
-        const [alertsData, reportsData, statsData, statusData, articlesData, bookmarksData] =
+        const [alertsData, reportsData, statsData, statusData, articlesData] =
           await Promise.all([
             apiClient.getAlerts(alertsLimit.value, offset),
             apiClient.getReports(),
             apiClient.getStatistics(),
             apiClient.getSystemStatus(),
             apiClient.searchArticles({ limit: 10000, tag: filterTag.value || undefined }),
-            apiClient.getBookmarks(),
           ]);
 
         const rawAlerts = alertsData.alerts || [];
@@ -295,7 +291,6 @@ const app = createApp({
         systemStatus.value = statusData;
         allArticles.value = articlesData.articles || [];
         historyTotalCount.value = articlesData.total_count || 0;
-        bookmarks.value = bookmarksData || [];
 
         lastRefreshTime.value = new Date();
         updateCharts();
@@ -387,36 +382,6 @@ const app = createApp({
 
     const applyHistoryFilters = () => {
       historyPage.value = 1;
-    };
-
-    const toggleBookmark = async (alert) => {
-      try {
-        const result = await apiClient.toggleBookmark(
-          alert.id,
-          {
-            title: alert.title,
-            source: alert.source,
-            date: alert.date,
-            link: alert.link,
-            severity: alert.severity || "medium"
-          }
-        );
-        
-        if (result.bookmarked) {
-          showToast("Alert bookmarked", "success");
-        } else {
-          showToast("Bookmark removed", "info");
-        }
-        
-        // Refresh bookmarks
-        bookmarks.value = await apiClient.getBookmarks();
-      } catch (error) {
-        showToast("Error toggling bookmark", "error");
-      }
-    };
-
-    const isBookmarked = (alertId) => {
-      return bookmarks.value.some(b => b.id === alertId);
     };
 
     const exportAlerts = async (format) => {
@@ -837,8 +802,6 @@ const app = createApp({
       alertsPageEnd,
       filterStats,
       trendingTags,
-      bookmarks,
-      showBookmarksOnly,
       lastRefreshTime,
       newAlertsCount,
       toastMessages,
@@ -862,7 +825,6 @@ const app = createApp({
       totalHistoryPages,
       alertsCount,
       reportsCount,
-      bookmarksCount,
       filteredAlerts,
       hasMoreAlerts,
       refreshData,
@@ -872,8 +834,6 @@ const app = createApp({
       changeAlertsPage,
       changeHistoryPage,
       applyHistoryFilters,
-      toggleBookmark,
-      isBookmarked,
       exportAlerts,
       exportReport,
       filterByTag,

@@ -82,17 +82,10 @@
               <i class="fas fa-chart-bar"></i> Stats
             </button>
             
-            <button @click="currentTab = 'articles'" 
-                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
+            <button @click="currentTab = 'articles'"
+                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2',
                              currentTab === 'articles' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
               <i class="fas fa-archive"></i> History
-            </button>
-            
-            <button @click="currentTab = 'bookmarks'" 
-                    :class="['px-4 py-2 rounded-lg transition-all duration-200 flex items-center gap-2', 
-                             currentTab === 'bookmarks' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:bg-slate-700/50']">
-              <i class="fas fa-bookmark"></i>
-              <span v-if="bookmarksCount > 0" class="ml-1 px-2 py-0.5 text-xs bg-white/20 rounded-full">{{ bookmarksCount }}</span>
             </button>
           </div>
 
@@ -149,13 +142,9 @@
                     :class="['px-4 py-2 rounded-lg text-left', currentTab === 'stats' ? 'bg-blue-600' : 'hover:bg-slate-700']">
               <i class="fas fa-chart-bar mr-2"></i>Stats
             </button>
-            <button @click="currentTab = 'articles'; showMobileMenu = false" 
+            <button @click="currentTab = 'articles'; showMobileMenu = false"
                     :class="['px-4 py-2 rounded-lg text-left', currentTab === 'articles' ? 'bg-blue-600' : 'hover:bg-slate-700']">
               <i class="fas fa-archive mr-2"></i>History
-            </button>
-            <button @click="currentTab = 'bookmarks'; showMobileMenu = false" 
-                    :class="['px-4 py-2 rounded-lg text-left', currentTab === 'bookmarks' ? 'bg-blue-600' : 'hover:bg-slate-700']">
-              <i class="fas fa-bookmark mr-2"></i>Bookmarks
             </button>
           </div>
         </div>
@@ -516,14 +505,6 @@
                       </span>
                     </div>
                   </div>
-                  
-                  <!-- Bookmark Button -->
-                  <button @click="toggleBookmark(alert)"
-                          :class="['p-2 rounded-lg transition-all duration-200 flex-shrink-0',
-                                   isBookmarked(alert.id) ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30' : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700 hover:text-yellow-400']"
-                          :title="isBookmarked(alert.id) ? 'Remove bookmark' : 'Add bookmark'">
-                    <i :class="['fas fa-bookmark', isBookmarked(alert.id) ? 'fas' : 'far']"></i>
-                  </button>
                 </div>
 
                 <!-- Tags Section -->
@@ -808,45 +789,6 @@
                       class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
                 <i class="fas fa-chevron-right"></i>
               </button>
-            </div>
-          </div>
-
-          <!-- BOOKMARKS TAB -->
-          <div v-show="currentTab === 'bookmarks'" class="space-y-4">
-            <h2 class="text-2xl font-bold text-white">
-              <i class="fas fa-bookmark mr-2"></i>Bookmarked Alerts
-            </h2>
-            
-            <div v-if="bookmarks.length === 0" class="text-center py-16 bg-slate-800/50 rounded-xl border border-slate-700">
-              <i class="fas fa-bookmark text-6xl mb-4 text-slate-600"></i>
-              <p class="text-slate-400 text-lg mb-2">No bookmarks yet</p>
-              <p class="text-slate-500 text-sm">Bookmark important alerts from the Alerts tab</p>
-            </div>
-            
-            <div v-for="bookmark in bookmarks" :key="bookmark.id" 
-                 class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-yellow-500/30 shadow-lg hover:shadow-2xl hover:border-yellow-500/50 transition-all duration-200 p-6">
-              <div class="flex justify-between items-start mb-3">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-2">
-                    <i :class="['fas', getSeverityIcon(bookmark.severity), 'text-' + getSeverityColor(bookmark.severity) + '-400']"></i>
-                    <span :class="['px-2 py-1 rounded-full text-xs font-semibold',
-                                   'bg-' + getSeverityColor(bookmark.severity) + '-500/20',
-                                   'text-' + getSeverityColor(bookmark.severity) + '-300']">
-                      {{ bookmark.severity.toUpperCase() }}
-                    </span>
-                  </div>
-                  <h3 class="text-lg font-bold text-white">{{ bookmark.title }}</h3>
-                </div>
-                <button @click="toggleBookmark(bookmark)" class="text-yellow-400 hover:text-yellow-300">
-                  <i class="fas fa-bookmark text-xl"></i>
-                </button>
-              </div>
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-slate-500">{{ bookmark.source }} • {{ bookmark.date }}</span>
-                <a :href="bookmark.link" target="_blank" class="text-blue-400 hover:text-blue-300">
-                  <i class="fas fa-external-link-alt mr-1"></i>View Source
-                </a>
-              </div>
             </div>
           </div>
         </div>

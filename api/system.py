@@ -21,7 +21,6 @@ from .models import (
     StatisticsResponse,
     SystemStatusResponse,
     CacheStatsResponse,
-    BookmarkResponse,
     ExportResponse,
 )
 
@@ -44,9 +43,6 @@ def _read_version() -> str:
     return "0.0.0"
 
 _APP_VERSION = _read_version()
-
-# Bookmarks storage (in-memory)
-bookmarks_db: Dict[int, Dict] = {}
 
 # Server start time for uptime calculation
 _server_start_time = time.time()
@@ -172,55 +168,6 @@ async def get_system_status() -> SystemStatusResponse:
 async def get_version() -> dict:
     """Get application version from cached pyproject.toml value."""
     return {"version": _APP_VERSION, "started_at": get_start_time_iso()}
-
-
-@router.get("/bookmarks", response_model=list[BookmarkResponse])
-async def get_bookmarks() -> list[BookmarkResponse]:
-    """Get all bookmarked alerts."""
-    try:
-        return list(bookmarks_db.values())
-    except Exception as e:
-        logger.error(f"Error fetching bookmarks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
-@router.post("/bookmarks/toggle")
-async def toggle_bookmark(alert_id: int, title: str = "", source: str = "", date: str = "", link: str = "", severity: str = "medium"):
-    """Toggle bookmark for an alert."""
-    try:
-        if alert_id in bookmarks_db:
-            del bookmarks_db[alert_id]
-            return {"bookmarked": False, "message": "Bookmark removed"}
-        else:
-            bookmarks_db[alert_id] = {
-                "id": alert_id,
-                "title": title,
-                "source": source,
-                "date": date,
-                "link": link,
-                "severity": severity,
-                "bookmarked_at": datetime.now().isoformat()
-            }
-            return {"bookmarked": True, "message": "Bookmark added"}
-    except Exception as e:
-        logger.error(f"Error toggling bookmark: {e}")
-        return {"bookmarked": False, "error": str(e)}
-
-
-@router.delete("/bookmarks/{alert_id}")
-async def delete_bookmark(alert_id: int) -> JSONResponse:
-    """Delete a bookmark by alert ID."""
-    try:
-        if alert_id in bookmarks_db:
-            del bookmarks_db[alert_id]
-            return JSONResponse(content={"message": "Bookmark deleted"})
-        else:
-            raise HTTPException(status_code=404, detail="Bookmark not found")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting bookmark {alert_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.get("/export/alerts")
