@@ -1218,20 +1218,25 @@ def deduplicate_alerts_with_ai(alerts: list) -> dict:
         alerts_to_analyze = alerts[:15]
         remaining_alerts = alerts[15:]
 
-        # Build compact deduplication prompt
+        # Build compact deduplication prompt with title + analysis snippet
         alerts_summary = "\n".join([
-            f"{i+1}. {a.get('title', '')[:60]}"
+            f"{i+1}. {a.get('title', '')[:80]}\n   {a.get('analysis', '')[:120] or a.get('content', '')[:120]}"
             for i, a in enumerate(alerts_to_analyze)
         ])
 
-        prompt = f"""Which alerts are about the SAME incident/CVE?
+        prompt = f"""Which alerts are about the SAME security incident, threat actor, or vulnerability?
+
+Group articles that discuss:
+- The same threat actor/APT group (e.g., Iranian hackers, APT41)
+- The same CVE/vulnerability or attack campaign
+- The same breach or security event
 
 {alerts_summary}
 
-JSON mapping alert number to primary number:
+JSON mapping alert number to primary number (group duplicates under the first article number):
 {{"1": 1, "2": 1, "3": 3, ...}}"""
 
-        instruction = """Identify duplicate alerts about same incident/CVE."""
+        instruction = """You are a threat intelligence analyst. Identify alerts about the same security incident, threat actor (e.g., Iranian state-sponsored hackers), vulnerability, or attack campaign. Consider semantic similarity - different titles can describe the same threat. Group them under the first/primary article number."""
 
         logger.debug(f"Deduplicating {len(alerts_to_analyze)} alerts with AI provider...")
         response_text = ai_client.generate_content(

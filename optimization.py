@@ -47,7 +47,7 @@ def _cosine_similarity(vec1, vec2) -> float:
     return float(dot_product / (norm1 * norm2))
 
 
-def detect_similar_articles(article: dict, existing_articles: list, similarity_threshold: float = 0.8) -> bool:
+def detect_similar_articles(article: dict, existing_articles: list, similarity_threshold: float = 0.65) -> bool:
     """
     Detect if article is too similar to existing ones.
 
@@ -58,6 +58,7 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
         article: Article to check
         existing_articles: List of existing articles
         similarity_threshold: Similarity score threshold (0-1)
+                            Default 0.65: Balanced clustering for cybersecurity articles
 
     Returns:
         True if similar article found, False otherwise
@@ -162,7 +163,7 @@ def should_analyze_article(article: dict, analyzed_articles: list) -> bool:
         return False
 
     # Check for similarity
-    if detect_similar_articles(article, analyzed_articles, similarity_threshold=0.75):
+    if detect_similar_articles(article, analyzed_articles, similarity_threshold=0.65):
         logger.debug(f"Article too similar (skipped): {article['title'][:50]}...")
         return False
 

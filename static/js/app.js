@@ -232,31 +232,36 @@ const app = createApp({
       expandedAlerts.value = newSet;
     };
 
-    // Deduplication function
+    // Deduplication function - removes exact duplicates, preserves topic clustering from backend
     const deduplicateAlerts = (alertsList) => {
-      const grouped = new Map();
+      const seen = new Map(); // title_key -> alert
+      const result = [];
 
       alertsList.forEach(alert => {
-        const key = alert.title.substring(0, 50).toLowerCase().trim();
+        // Use first 80 chars of title as dedup key
+        const key = alert.title.substring(0, 80).toLowerCase().trim();
 
-        if (!grouped.has(key)) {
-          grouped.set(key, {
-            ...alert,
-            sources: [{ source: alert.source, link: alert.link }],
-          });
+        if (!seen.has(key)) {
+          // First occurrence - keep it
+          seen.set(key, alert);
+          result.push(alert);
         } else {
-          const existing = grouped.get(key);
-          if (!existing.sources.some(s => s.source === alert.source)) {
-            existing.sources.push({ source: alert.source, link: alert.link });
+          // Duplicate title - merge sources if from different feed
+          const existing = seen.get(key);
+          if (existing.source !== alert.source) {
+            // Add as additional source
+            if (!existing.sourceLinks) {
+              existing.sourceLinks = [{ source: existing.source, link: existing.link }];
+            }
+            if (!existing.sourceLinks.some(s => s.source === alert.source)) {
+              existing.sourceLinks.push({ source: alert.source, link: alert.link });
+              existing.multiSource = true;
+            }
           }
         }
       });
 
-      return Array.from(grouped.values()).map(alert => ({
-        ...alert,
-        multiSource: alert.sources.length > 1,
-        sourceLinks: alert.sources,
-      }));
+      return result;
     };
 
     // Methods
