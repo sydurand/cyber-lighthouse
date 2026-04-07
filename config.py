@@ -1,5 +1,6 @@
 """Configuration management for Cyber-Lighthouse."""
 import os
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -33,19 +34,32 @@ class Config:
     # JSON export (for backward compatibility)
     JSON_DATABASE_FILE = os.getenv("JSON_DATABASE_FILE", "base_veille.json")
 
-    # RSS Feeds
-    RSS_FEEDS = {
-        "BleepingComputer": "https://www.bleepingcomputer.com/feed/",
-        "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml",
-        "DarkReading": "https://www.darkreading.com/rss.xml",
-        "MS-ISAC": "https://www.cisecurity.org/feed/advisories",
-        "KrebsOnSecurity": "https://krebsonsecurity.com/feed/",
-        "Talos": "https://blog.talosintelligence.com/rss/",
-        "Google": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
-        "DataBreaches": "https://www.databreaches.net/feed/",
-        "UpGuard": "https://www.upguard.com/breaches/rss.xml",
-        "Wiz": "https://www.wiz.io/api/feed/cloud-threat-landscape/rss.xml",
-    }
+    # RSS Feeds (loaded from rss_feeds.json)
+    # Set enabled: false in the JSON to temporarily disable a feed
+    @staticmethod
+    def _load_rss_feeds() -> dict:
+        """Load RSS feeds from rss_feeds.json file."""
+        feeds_file = Path(__file__).parent / "rss_feeds.json"
+        if not feeds_file.exists():
+            # Fallback to hardcoded feeds if JSON file is missing
+            return {
+                "BleepingComputer": "https://www.bleepingcomputer.com/feed/",
+                "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml",
+                "DarkReading": "https://www.darkreading.com/rss.xml",
+            }
+
+        with open(feeds_file, "r") as f:
+            data = json.load(f)
+
+        # Convert to dict, filtering by enabled status
+        feeds = {}
+        for feed in data.get("feeds", []):
+            if feed.get("enabled", True):
+                feeds[feed["name"]] = feed["url"]
+
+        return feeds
+
+    RSS_FEEDS = _load_rss_feeds.__func__()
 
     # CISA Feed
     CISA_KEV_URL = os.getenv("CISA_KEV_URL", "https://www.cisa.gov/cybersecurity-advisories/all.xml")

@@ -1,0 +1,55 @@
+{
+  "_comment": "RSS news feeds for Cyber-Lighthouse. Set enabled: false to temporarily disable a feed.",
+  "feeds": [
+    {
+      "name": "BleepingComputer",
+      "url": "https://www.bleepingcomputer.com/feed/",
+      "enabled": true
+    },
+    {
+      "name": "SANS_ISC",
+      "url": "https://isc.sans.edu/rssfeed_full.xml",
+      "enabled": true
+    },
+    {
+      "name": "DarkReading",
+      "url": "https://www.darkreading.com/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "MS-ISAC",
+      "url": "https://www.cisecurity.org/feed/advisories",
+      "enabled": true
+    },
+    {
+      "name": "KrebsOnSecurity",
+      "url": "https://krebsonsecurity.com/feed/",
+      "enabled": true
+    },
+    {
+      "name": "Talos",
+      "url": "https://blog.talosintelligence.com/rss/",
+      "enabled": true
+    },
+    {
+      "name": "Google",
+      "url": "https://cloudblog.withgoogle.com/topics/threat-intelligence/rss/",
+      "enabled": true
+    },
+    {
+      "name": "DataBreaches",
+      "url": "https://www.databreaches.net/feed/",
+      "enabled": true
+    },
+    {
+      "name": "UpGuard",
+      "url": "https://www.upguard.com/breaches/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "Wiz",
+      "url": "https://www.wiz.io/api/feed/cloud-threat-landscape/rss.xml",
+      "enabled": true
+    }
+  ]
+}
