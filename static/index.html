@@ -188,7 +188,7 @@
       <!-- Content Grid -->
       <div v-if="statistics" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <!-- Sidebar -->
-        <div class="space-y-6">
+        <div class="lg:col-span-1 space-y-6">
           <!-- Trending Tags & Severity Distribution (Clickable) -->
           <div v-if="Object.keys(trendingTags).length > 0 || alerts.length > 0" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl border border-slate-700 shadow-lg p-6">
             <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-fire mr-2"></i>Trending Tags</h3>
