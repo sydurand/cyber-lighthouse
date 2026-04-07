@@ -244,6 +244,15 @@ const app = createApp({
       const result = [];
 
       alertsList.forEach(alert => {
+        // Initialize sourceLinks from backend topic_sources if available
+        if (alert.topic_sources && alert.topic_sources.length > 0 && !alert.sourceLinks) {
+          alert.sourceLinks = [
+            { source: alert.source, link: alert.link },
+            ...alert.topic_sources.filter(s => s.source !== alert.source)
+          ];
+          alert.multiSource = alert.sourceLinks.length > 1;
+        }
+
         // Use first 80 chars of title as dedup key
         const key = alert.title.substring(0, 80).toLowerCase().trim();
 
