@@ -543,7 +543,8 @@ class Database:
                         FROM articles a
                         JOIN article_topics at ON a.id = at.article_id
                         WHERE at.topic_id = ?
-                    )
+                    ),
+                    processed_for_summary = 0
                     WHERE id = ?
                 """, (topic_id, topic_id))
                 conn.commit()
