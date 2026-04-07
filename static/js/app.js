@@ -244,12 +244,16 @@ const app = createApp({
       const result = [];
 
       alertsList.forEach(alert => {
-        // Initialize sourceLinks from backend topic_sources if available
-        if (alert.topic_sources && alert.topic_sources.length > 0 && !alert.sourceLinks) {
-          alert.sourceLinks = [
-            { source: alert.source, link: alert.link },
-            ...alert.topic_sources.filter(s => s.source !== alert.source)
-          ];
+        // Always initialize sourceLinks with the article's own source
+        alert.sourceLinks = [{ source: alert.source, link: alert.link }];
+
+        // Add related sources from backend topic clustering
+        if (alert.topic_sources && alert.topic_sources.length > 0) {
+          alert.topic_sources.forEach(src => {
+            if (!alert.sourceLinks.some(s => s.source === src.source)) {
+              alert.sourceLinks.push({ source: src.source, link: src.link });
+            }
+          });
           alert.multiSource = alert.sourceLinks.length > 1;
         }
 
