@@ -91,6 +91,52 @@ class APIClient {
   }
 
   /**
+   * Get all RSS feeds
+   */
+  async getRssFeeds() {
+    return this.fetch("/settings/feeds");
+  }
+
+  /**
+   * Add a new RSS feed
+   */
+  async addRssFeed(feed) {
+    return this.fetch("/settings/feeds", {
+      method: "POST",
+      body: JSON.stringify(feed),
+    });
+  }
+
+  /**
+   * Update an RSS feed
+   */
+  async updateRssFeed(feedName, feed) {
+    return this.fetch(`/settings/feeds/${encodeURIComponent(feedName)}`, {
+      method: "PUT",
+      body: JSON.stringify(feed),
+    });
+  }
+
+  /**
+   * Delete an RSS feed
+   */
+  async deleteRssFeed(feedName) {
+    return this.fetch(`/settings/feeds/${encodeURIComponent(feedName)}`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * Update all RSS feeds (bulk)
+   */
+  async updateRssFeeds(feeds) {
+    return this.fetch("/settings/feeds", {
+      method: "PUT",
+      body: JSON.stringify({ feeds }),
+    });
+  }
+
+  /**
    * Export alerts
    */
   async exportAlerts(format = "markdown", limit = 100) {

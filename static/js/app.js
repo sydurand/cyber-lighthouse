@@ -63,6 +63,12 @@ const app = createApp({
     // Re-analysis loading state (Set of alert IDs currently being re-analyzed)
     const reanalyzingAlerts = ref(new Set());
 
+    // Settings state
+    const rssFeeds = ref([]);
+    const showAddFeedForm = ref(false);
+    const newFeed = ref({ name: "", url: "" });
+    const editingFeedIndex = ref(-1);
+
     // Charts
     let chartBySource = null;
     let chartByDate = null;
@@ -467,6 +473,69 @@ const app = createApp({
       URL.revokeObjectURL(url);
     };
 
+    // ==================== RSS Feed Management ====================
+
+    const loadFeeds = async () => {
+      try {
+        const result = await apiClient.getRssFeeds();
+        rssFeeds.value = result.feeds || [];
+      } catch (error) {
+        console.error("Error loading feeds:", error);
+      }
+    };
+
+    const addFeed = async () => {
+      if (!newFeed.value.name || !newFeed.value.url) return;
+
+      try {
+        await apiClient.addRssFeed(newFeed.value);
+        showToast(`Feed '${newFeed.value.name}' added`, "success");
+        showAddFeedForm.value = false;
+        newFeed.value = { name: "", url: "" };
+        editingFeedIndex.value = -1;
+        await loadFeeds();
+      } catch (error) {
+        showToast(`Failed to add feed: ${error.message}`, "error");
+      }
+    };
+
+    const toggleFeed = async (index) => {
+      const feed = rssFeeds.value[index];
+      const newName = feed.enabled ? `${feed.name}_disabled` : feed.name.replace("_disabled", "");
+      
+      try {
+        await apiClient.updateRssFeed(feed.name, {
+          name: feed.name,
+          url: feed.url,
+          enabled: !feed.enabled
+        });
+        showToast(`Feed ${feed.enabled ? 'disabled' : 'enabled'}`, "info");
+        await loadFeeds();
+      } catch (error) {
+        showToast(`Failed to update feed: ${error.message}`, "error");
+      }
+    };
+
+    const editFeed = (index) => {
+      const feed = rssFeeds.value[index];
+      newFeed.value = { name: feed.name, url: feed.url };
+      editingFeedIndex.value = index;
+      showAddFeedForm.value = true;
+    };
+
+    const deleteFeed = async (index) => {
+      const feed = rssFeeds.value[index];
+      if (!confirm(`Delete feed '${feed.name}'?`)) return;
+
+      try {
+        await apiClient.deleteRssFeed(feed.name);
+        showToast(`Feed '${feed.name}' deleted`, "success");
+        await loadFeeds();
+      } catch (error) {
+        showToast(`Failed to delete feed: ${error.message}`, "error");
+      }
+    };
+
     const filterByTag = (tag) => {
       filterTag.value = filterTag.value === tag ? "" : tag;
       historyPage.value = 1;
@@ -834,6 +903,7 @@ const app = createApp({
       fetchTaskStatus();
       autoRefresh();
       document.addEventListener("keydown", handleKeyboard);
+      loadFeeds();
 
       // Fetch app version
       apiClient.getVersion().then((data) => {
@@ -905,6 +975,14 @@ const app = createApp({
       reanalyzeAlert,
       isReanalyzing,
       reanalyzingAlerts,
+      rssFeeds,
+      showAddFeedForm,
+      newFeed,
+      loadFeeds,
+      addFeed,
+      toggleFeed,
+      editFeed,
+      deleteFeed,
       filterByTag,
       filterBySeverity,
       clearNotificationBadge,

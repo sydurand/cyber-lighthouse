@@ -1,6 +1,5 @@
 """Configuration management for Cyber-Lighthouse."""
 import os
-import json
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -34,30 +33,24 @@ class Config:
     # JSON export (for backward compatibility)
     JSON_DATABASE_FILE = os.getenv("JSON_DATABASE_FILE", "base_veille.json")
 
-    # RSS Feeds (loaded from rss_feeds.json)
-    # Set enabled: false in the JSON to temporarily disable a feed
+    # RSS Feeds (loaded from database settings table)
+    # Set enabled: false to temporarily disable a feed
     @staticmethod
     def _load_rss_feeds() -> dict:
-        """Load RSS feeds from rss_feeds.json file."""
-        feeds_file = Path(__file__).parent / "rss_feeds.json"
-        if not feeds_file.exists():
-            # Fallback to hardcoded feeds if JSON file is missing
+        """Load RSS feeds from database settings table."""
+        try:
+            from database import Database
+            db = Database()
+            feeds = db.get_setting("rss_feeds", [])
+            # Convert to dict, filtering by enabled status
+            return {f["name"]: f["url"] for f in feeds if f.get("enabled", True)}
+        except Exception:
+            # Fallback to hardcoded feeds if database not ready
             return {
                 "BleepingComputer": "https://www.bleepingcomputer.com/feed/",
                 "SANS_ISC": "https://isc.sans.edu/rssfeed_full.xml",
                 "DarkReading": "https://www.darkreading.com/rss.xml",
             }
-
-        with open(feeds_file, "r") as f:
-            data = json.load(f)
-
-        # Convert to dict, filtering by enabled status
-        feeds = {}
-        for feed in data.get("feeds", []):
-            if feed.get("enabled", True):
-                feeds[feed["name"]] = feed["url"]
-
-        return feeds
 
     RSS_FEEDS = _load_rss_feeds.__func__()
 

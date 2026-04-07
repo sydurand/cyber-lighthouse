@@ -125,6 +125,46 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_suggested_status ON suggested_tags(status)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_suggested_tag ON suggested_tags(tag)")
 
+                # Settings table for application configuration
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        category TEXT DEFAULT 'general',
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_category ON settings(category)")
+
+                # Migration: Seed default RSS feeds if settings table is empty
+                try:
+                    cursor.execute("SELECT COUNT(*) as cnt FROM settings")
+                    if cursor.fetchone()[0] == 0:
+                        from pathlib import Path as PathLib
+                        feeds_file = PathLib(__file__).parent / "rss_feeds.json"
+                        if feeds_file.exists():
+                            with open(feeds_file, "r") as f:
+                                feeds_data = json.load(f)
+                            cursor.execute(
+                                "INSERT INTO settings (key, value, category) VALUES (?, ?, ?)",
+                                ("rss_feeds", json.dumps(feeds_data.get("feeds", [])), "feeds")
+                            )
+                            logger.info("Migration: Seeded RSS feeds from rss_feeds.json into settings table")
+                        else:
+                            # Fallback feeds
+                            fallback = [
+                                {"name": "BleepingComputer", "url": "https://www.bleepingcomputer.com/feed/", "enabled": True},
+                                {"name": "SANS_ISC", "url": "https://isc.sans.edu/rssfeed_full.xml", "enabled": True},
+                                {"name": "DarkReading", "url": "https://www.darkreading.com/rss.xml", "enabled": True},
+                            ]
+                            cursor.execute(
+                                "INSERT INTO settings (key, value, category) VALUES (?, ?, ?)",
+                                ("rss_feeds", json.dumps(fallback), "feeds")
+                            )
+                            logger.info("Migration: Seeded default RSS feeds into settings table")
+                except Exception as e:
+                    logger.warning(f"Migration seeding warning: {e}")
+
                 conn.commit()
             logger.debug(f"Database initialized: {self.db_file}")
         except sqlite3.Error as e:
@@ -986,4 +1026,62 @@ class Database:
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
             logger.error(f"Error deleting suggested tag: {e}")
+            return False
+
+    # ==================== Settings Methods ====================
+
+    def get_setting(self, key: str, default=None):
+        """Get a setting value by key."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+                return default
+        except Exception as e:
+            logger.error(f"Error getting setting {key}: {e}")
+            return default
+
+    def set_setting(self, key: str, value, category: str = "general") -> bool:
+        """Set a setting value, inserting if it doesn't exist."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """INSERT INTO settings (key, value, category) VALUES (?, ?, ?)
+                       ON CONFLICT(key) DO UPDATE SET value = ?, category = ?, updated_at = CURRENT_TIMESTAMP""",
+                    (key, json.dumps(value), category, json.dumps(value), category)
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Error setting {key}: {e}")
+            return False
+
+    def get_all_settings(self, category: str = None) -> dict:
+        """Get all settings, optionally filtered by category."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                if category:
+                    cursor.execute("SELECT key, value FROM settings WHERE category = ?", (category,))
+                else:
+                    cursor.execute("SELECT key, value FROM settings")
+                return {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Error getting settings: {e}")
+            return {}
+
+    def delete_setting(self, key: str) -> bool:
+        """Delete a setting by key."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting setting {key}: {e}")
             return False
