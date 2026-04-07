@@ -84,6 +84,13 @@ class APIClient {
   }
 
   /**
+   * Re-analyze an alert with AI
+   */
+  async reanalyzeAlert(alertId) {
+    return this.fetch(`/alerts/${alertId}/reanalyze`, { method: "POST" });
+  }
+
+  /**
    * Export alerts
    */
   async exportAlerts(format = "markdown", limit = 100) {

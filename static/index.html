@@ -497,7 +497,20 @@
                         <i class="fas fa-layer-group"></i>
                         {{ alert.sourceLinks.length }} sources
                       </span>
-                      
+
+                      <!-- Re-analyze Button -->
+                      <button @click="reanalyzeAlert(alert)"
+                              :disabled="isReanalyzing(alert.id)"
+                              :class="['inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all duration-200',
+                                       isReanalyzing(alert.id)
+                                         ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                                         : 'bg-blue-500/15 text-blue-300 border border-blue-500/25 hover:bg-blue-500/25 hover:text-blue-200 cursor-pointer']"
+                              :title="isReanalyzing(alert.id) ? 'Analysis in progress...' : 'Re-analyze with AI'">
+                        <i :class="['fas', isReanalyzing(alert.id) ? 'fa-spinner fa-spin' : 'fa-sync-alt']"></i>
+                        <span v-if="isReanalyzing(alert.id)">Analyzing...</span>
+                        <span v-else>Re-analyze</span>
+                      </button>
+
                       <!-- Date -->
                       <span class="inline-flex items-center gap-1 text-xs text-slate-400">
                         <i class="fas fa-calendar-alt"></i>

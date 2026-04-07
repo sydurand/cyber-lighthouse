@@ -275,3 +275,92 @@ async def get_alert(alert_id: int) -> AlertResponse:
     except Exception as e:
         logger.error(f"Error fetching alert {alert_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/alerts/{alert_id}/reanalyze")
+async def reanalyze_alert(alert_id: int) -> dict:
+    """
+    Re-analyze an alert with AI, overriding cached analysis.
+
+    Useful when:
+    - Initial analysis failed (AI service down)
+    - Analysis quality was poor
+    - Tags/severity need refresh
+
+    Returns the new analysis and updated metadata.
+    """
+    try:
+        from real_time import analyze_article_with_ai
+        from optimization import get_call_counter
+
+        # Get article from database
+        articles = db.get_all_articles()
+        article = next((a for a in articles if a.get("id") == alert_id), None)
+
+        if not article:
+            raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+
+        title = article.get("title", "")
+        content = article.get("content", "")
+
+        if not content or len(content) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Article content too short for meaningful analysis"
+            )
+
+        # Check rate limit
+        call_counter = get_call_counter()
+        if not call_counter.can_make_call():
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Please wait before re-analyzing."
+            )
+
+        logger.info(f"Manual re-analysis requested for alert {alert_id}: {title[:50]}...")
+
+        # Call AI analysis (this will update cache automatically)
+        new_analysis = analyze_article_with_ai(title, content)
+
+        # Check if analysis actually succeeded (not a fallback message)
+        if new_analysis.startswith("⏳") or new_analysis.startswith("Analysis unavailable"):
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI analysis failed: {new_analysis[:100]}"
+            )
+
+        # Update analysis in database
+        db.set_article_analysis(article.get("link", ""), new_analysis)
+
+        # Clear tag cache to force re-extraction with new analysis
+        tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+        from utils import _tag_cache
+        if tags_cache_key in _tag_cache:
+            del _tag_cache[tags_cache_key]
+
+        # Extract new tags
+        new_tags = _extract_tags_from_keywords_dynamic(title, new_analysis)
+        if new_tags:
+            _tag_cache[tags_cache_key] = new_tags
+            db.set_article_tags(alert_id, new_tags)
+
+        # Calculate new severity
+        new_severity = detect_severity(title, new_analysis, new_tags or [])
+
+        logger.info(
+            f"Re-analysis complete for alert {alert_id}: "
+            f"severity={new_severity}, tags={len(new_tags or [])}"
+        )
+
+        return {
+            "message": "Analysis refreshed successfully",
+            "analysis": new_analysis,
+            "severity": new_severity,
+            "tags": new_tags or [],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error re-analyzing alert {alert_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

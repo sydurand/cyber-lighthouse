@@ -60,6 +60,9 @@ const app = createApp({
     const taskStatus = ref(null);
     const taskTriggerLoading = ref(false);
 
+    // Re-analysis loading state (Set of alert IDs currently being re-analyzed)
+    const reanalyzingAlerts = ref(new Set());
+
     // Charts
     let chartBySource = null;
     let chartByDate = null;
@@ -412,6 +415,44 @@ const app = createApp({
       } catch (error) {
         showToast("Error exporting report", "error");
       }
+    };
+
+    const reanalyzeAlert = async (alert) => {
+      // Prevent duplicate requests
+      if (reanalyzingAlerts.value.has(alert.id)) {
+        showToast("Analysis already in progress", "warning");
+        return;
+      }
+
+      try {
+        reanalyzingAlerts.value.add(alert.id);
+        showToast("Re-analyzing alert with AI...", "info");
+
+        const result = await apiClient.reanalyzeAlert(alert.id);
+
+        // Update the alert in the local state
+        const index = alerts.value.findIndex(a => a.id === alert.id);
+        if (index !== -1) {
+          alerts.value[index] = {
+            ...alerts.value[index],
+            analysis: result.analysis,
+            severity: result.severity,
+            tags: result.tags,
+          };
+        }
+
+        showToast("Analysis refreshed successfully", "success");
+      } catch (error) {
+        console.error("Re-analysis failed:", error);
+        const errorMsg = error.response?.data?.detail || error.message || "Unknown error";
+        showToast(`Re-analysis failed: ${errorMsg}`, "error", 5000);
+      } finally {
+        reanalyzingAlerts.value.delete(alert.id);
+      }
+    };
+
+    const isReanalyzing = (alertId) => {
+      return reanalyzingAlerts.value.has(alertId);
     };
 
     const downloadFile = (content, filename, mimeType) => {
@@ -861,6 +902,9 @@ const app = createApp({
       applyHistoryFilters,
       exportAlerts,
       exportReport,
+      reanalyzeAlert,
+      isReanalyzing,
+      reanalyzingAlerts,
       filterByTag,
       filterBySeverity,
       clearNotificationBadge,
