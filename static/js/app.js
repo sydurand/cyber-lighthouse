@@ -47,9 +47,6 @@ const app = createApp({
     const expandedAlerts = ref(new Set());
     const collapseOldAlerts = ref(true);
 
-    // Keyboard shortcuts modal
-    const showShortcutsModal = ref(false);
-
     // Export dropdown
     const showExportMenu = ref(false);
 
@@ -649,28 +646,6 @@ const app = createApp({
       }, 30000);
     };
 
-    // Keyboard shortcuts
-    const handleKeyboard = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") {
-        return;
-      }
-
-      if (e.key === "?") {
-        e.preventDefault();
-        showShortcutsModal.value = !showShortcutsModal.value;
-      } else if (e.key >= "1" && e.key <= "4") {
-        const tabs = ["alerts", "reports", "stats", "articles"];
-        currentTab.value = tabs[parseInt(e.key) - 1];
-      } else if (e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        refreshData();
-      } else if (e.key === "/") {
-        e.preventDefault();
-        const searchInput = document.querySelector('input[placeholder*="Search"]');
-        if (searchInput) searchInput.focus();
-      }
-    };
-
     // Markdown renderer
     const renderMarkdown = (content) => {
       if (!content) return "";
@@ -902,7 +877,6 @@ const app = createApp({
       refreshData();
       fetchTaskStatus();
       autoRefresh();
-      document.addEventListener("keydown", handleKeyboard);
       loadFeeds();
 
       // Fetch app version
@@ -950,7 +924,6 @@ const app = createApp({
       reportsWithTOC,
       expandedAlerts,
       collapseOldAlerts,
-      showShortcutsModal,
       showExportMenu,
       showMobileMenu,
       taskStatus,
