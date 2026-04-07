@@ -21,7 +21,6 @@ services:
       - ./logs:/app/logs
       - ./reports:/app/reports
       - ./hf_cache:/app/.cache
-      - ./rss_feeds.json:/app/rss_feeds.json:ro
     read_only: true
     tmpfs:
       - /tmp:noexec,nosuid,size=64m
