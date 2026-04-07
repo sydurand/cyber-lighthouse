@@ -11,52 +11,104 @@ from logging_config import logger
 def detect_severity(title: str, analysis: str, tags: List[str]) -> str:
     """
     Detect alert severity based on content analysis.
-    
+
     Returns: critical, high, medium, or low
+
+    Severity is determined by actual threat impact, not just scary keywords.
+    The analysis text often mentions vulnerabilities/exploits contextually —
+    we need to distinguish "this IS critical" from "this could BE critical".
     """
     text = f"{title} {analysis}".lower()
+    title_lower = title.lower()
     tags_lower = [t.lower() for t in tags]
-    
-    # Critical indicators
-    critical_keywords = [
-        'critical', 'rce', 'remote code execution', 'zero-day', '0-day',
-        'active exploitation', 'data breach', 'ransomware', 'apt',
-        'nation-state', 'backdoor', 'rootkit', 'exfiltration',
-        'authentication bypass', 'unauthenticated', 'privilege escalation'
+
+    # ===== CRITICAL: Active, widespread, or unmitigated threat =====
+    # Must show ACTUAL impact, not just potential
+    critical_indicators = [
+        'active exploitation',       # Being exploited in the wild
+        'zero-day', '0-day',          # No patch exists
+        'nation-state',               # State-sponsored attack
+        'widespread compromise',      # Large-scale impact
+        'data exfiltration',          # Actual data theft
+        'ransomware attack',          # Active ransomware campaign
     ]
-    
-    # High severity indicators
-    high_keywords = [
-        'high', 'severe', 'exploit', 'vulnerability', 'malware',
-        'phishing', 'infostealer', 'credential', 'data leak',
-        'supply chain', 'lateral movement', 'persistence',
-        'evasion', 'obfuscation'
+
+    # Critical tags only (not keywords in text)
+    critical_tags = ['#apt', '#nationstate', '#zeroday']
+
+    # ===== HIGH: Serious vulnerability/attack with mitigation available =====
+    high_indicators = [
+        'ransomware',                 # Ransomware mentioned (but not active attack)
+        'apt ',                       # APT group involvement
+        'backdoor', 'rootkit',        # Persistent access tools
+        'privilege escalation',       # Escalation capability
+        'authentication bypass',      # Auth bypass vulnerability
+        'unauthenticated',            # No auth required
+        'remote code execution',      # RCE vulnerability
+        'critical vulnerability',     # Explicitly called critical
     ]
-    
-    # Low severity indicators
-    low_keywords = [
-        'low', 'informational', 'advisory', 'update', 'patch available',
-        'recommendation', 'best practice', 'guidance', 'no specific threat',
-        'no actionable', 'podcast', 'routine'
+
+    # ===== MEDIUM: Vulnerability/threat with context or patch =====
+    medium_indicators = [
+        'vulnerability', 'exploit',   # Vulnerability discussed
+        'malware', 'phishing',        # Malware/phishing campaign
+        'data breach', 'data leak',   # Breach mentioned
+        'supply chain',               # Supply chain risk
+        'lateral movement',           # Post-exploitation technique
+        'infostealer', 'credential',  # Credential theft
     ]
-    
-    # Check for critical
-    if any(kw in text for kw in critical_keywords):
-        return 'critical'
-    
-    # Check tags for severity hints
-    if any('critical' in tag or 'apt' in tag or 'ransomware' in tag for tag in tags_lower):
-        return 'critical'
-    
-    # Check for low
-    if any(kw in text for kw in low_keywords):
+
+    # ===== LOW: Advisory, routine, or non-actionable =====
+    low_indicators = [
+        'patch available',            # Fix exists
+        'no active exploitation',     # No wild exploitation
+        'no specific threat',         # Generic advisory
+        'no actionable',              # Nothing to do
+        'informational', 'advisory',  # Informational content
+        'best practice', 'guidance',  # Recommendations
+        'podcast', 'routine',         # Not a real alert
+    ]
+
+    # --- Scoring: count matches by level ---
+    def count_matches(text, keywords):
+        return sum(1 for kw in keywords if kw in text)
+
+    critical_score = count_matches(text, critical_indicators)
+    high_score = count_matches(text, high_indicators)
+    medium_score = count_matches(text, medium_indicators)
+    low_score = count_matches(text, low_indicators)
+
+    # Check critical/high tags (case-insensitive, supports #APT41, #APT, etc.)
+    has_critical_tag = any(tag in tags_lower for tag in critical_tags)
+    has_apt_tag = any('apt' in tag for tag in tags_lower)
+
+    # --- Decision logic ---
+
+    # If patch/mitigation exists AND no active exploitation, cap at high max
+    if 'patch available' in text or 'no active exploitation' in text or 'no specific threat' in text:
+        if high_score > 0:
+            return 'high'
+        if medium_score > 0:
+            return 'medium'
         return 'low'
-    
-    # Check for high
-    if any(kw in text for kw in high_keywords):
+
+    # Critical: strong signals (active exploitation + high critical score)
+    if critical_score >= 2 or (critical_score >= 1 and has_critical_tag):
+        return 'critical'
+
+    # High: RCE, backdoor, APT involvement, or multiple high indicators
+    if has_apt_tag or high_score >= 2 or (high_score >= 1 and medium_score >= 1):
         return 'high'
-    
-    # Default to medium
+
+    # Medium: vulnerability/malware discussed
+    if medium_score >= 1:
+        return 'medium'
+
+    # Low: advisory/routine content
+    if low_score >= 1:
+        return 'low'
+
+    # Default: medium (unknown content, assume moderate risk)
     return 'medium'
 
 
