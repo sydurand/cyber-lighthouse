@@ -8,15 +8,98 @@ from datetime import datetime
 from logging_config import logger
 
 
+def detect_severity_with_ai(analysis: str, title: str = "", tags: List[str] = None) -> str:
+    """
+    AI-driven severity detection by parsing the AI-generated analysis text.
+
+    The AI analysis prompt explicitly asks for severity/CVSS assessment.
+    This function extracts that assessment from the structured output,
+    with keyword-based fallback if the AI didn't provide clear severity info.
+
+    Args:
+        analysis: AI-generated analysis text (structured format with ALERT/IMPACT/TAGS)
+        title: Article title (used for context)
+        tags: Extracted tags (used for context)
+
+    Returns:
+        critical, high, medium, or low
+    """
+    if not analysis:
+        return detect_severity(title or "", "", tags or [])
+
+    text = f"{title} {analysis}".lower()
+    tags_lower = [t.lower() for t in (tags or [])]
+
+    # ===== 1. Extract explicit severity from AI output =====
+    # The AI prompt asks for "severity/CVSS" in Line 1 of ALERT section
+
+    # CVSS score extraction (e.g., "CVSS 8.8", "severity 8.8", "8.8/10")
+    cvss_match = re.search(r'cvss[\s:]*(\d+\.?\d*)', text)
+    if cvss_match:
+        cvss_score = float(cvss_match.group(1))
+        if cvss_score >= 9.0:
+            return 'critical'
+        elif cvss_score >= 7.0:
+            return 'high'
+        elif cvss_score >= 4.0:
+            return 'medium'
+        else:
+            return 'low'
+
+    # Explicit severity mentions by AI (e.g., "HIGH severity", "critical vulnerability")
+    # Check for CRITICAL indicators first
+    critical_patterns = [
+        r'critical\s*(?:severity|vulnerability|risk|threat|impact)?',
+        r'severity[:\s]*critical',
+        r'cvss[\s:]*(?:9\.|10\.|10)',
+    ]
+    if any(re.search(p, text) for p in critical_patterns):
+        # Confirm with additional context (not just the word "critical" used casually)
+        critical_context = ['active exploitation', 'zero-day', '0-day', 'nation-state',
+                          'widespread', 'in the wild', 'no patch', 'unpatched',
+                          'immediate action', 'urgent', 'actively exploited']
+        if any(kw in text for kw in critical_context):
+            return 'critical'
+        # Single critical mention with high-severity tags
+        if any(tag in tags_lower for tag in ['#apt', '#nationstate', '#zeroday']):
+            return 'critical'
+
+    # Explicit HIGH mentions
+    high_patterns = [
+        r'high\s*(?:severity|vulnerability|risk|threat|impact|priority)?',
+        r'severity[:\s]*high',
+        r'cvss[\s:]*(?:[78]\.\d*)',
+    ]
+    if any(re.search(p, text) for p in high_patterns):
+        return 'high'
+
+    # Explicit MENTION of medium
+    medium_patterns = [
+        r'moderate\s*(?:severity|vulnerability|risk|threat|impact)?',
+        r'medium\s*(?:severity|vulnerability|risk|threat)?',
+        r'severity[:\s]*(?:medium|moderate)',
+        r'cvss[\s:]*(?:[456]\.\d*)',
+    ]
+    if any(re.search(p, text) for p in medium_patterns):
+        return 'medium'
+
+    # ===== 2. Fall back to keyword-based detection =====
+    logger.debug("AI severity extraction inconclusive, using keyword-based fallback")
+    return detect_severity(title, analysis, tags or [])
+
+
 def detect_severity(title: str, analysis: str, tags: List[str]) -> str:
     """
-    Detect alert severity based on content analysis.
+    Detect alert severity based on keyword content analysis.
 
     Returns: critical, high, medium, or low
 
     Severity is determined by actual threat impact, not just scary keywords.
     The analysis text often mentions vulnerabilities/exploits contextually —
     we need to distinguish "this IS critical" from "this could BE critical".
+
+    Note: Prefer detect_severity_with_ai() for AI-generated analysis,
+    which parses the AI's own severity assessment first.
     """
     text = f"{title} {analysis}".lower()
     title_lower = title.lower()
@@ -45,7 +128,10 @@ def detect_severity(title: str, analysis: str, tags: List[str]) -> str:
         'authentication bypass',      # Auth bypass vulnerability
         'unauthenticated',            # No auth required
         'remote code execution',      # RCE vulnerability
+        'remotely execute',           # RCE variant (e.g., "lets hackers remotely execute commands")
+        'arbitrary command',          # Arbitrary command execution
         'critical vulnerability',     # Explicitly called critical
+        'high severity',              # Explicitly called high severity
     ]
 
     # ===== MEDIUM: Vulnerability/threat with context or patch =====
@@ -84,8 +170,13 @@ def detect_severity(title: str, analysis: str, tags: List[str]) -> str:
 
     # --- Decision logic ---
 
+    # Check for active exploitation/zero-day FIRST (overrides patch availability)
+    has_active_exploitation = 'active exploitation' in text or 'zero-day' in text or '0-day' in text
+    has_patch_available = 'patch available' in text and 'no patch available' not in text and 'no patch' not in text
+    has_no_exploitation = 'no active exploitation' in text or 'no specific threat' in text
+
     # If patch/mitigation exists AND no active exploitation, cap at high max
-    if 'patch available' in text or 'no active exploitation' in text or 'no specific threat' in text:
+    if (has_patch_available or has_no_exploitation) and not has_active_exploitation:
         if high_score > 0:
             return 'high'
         if medium_score > 0:
@@ -97,7 +188,10 @@ def detect_severity(title: str, analysis: str, tags: List[str]) -> str:
         return 'critical'
 
     # High: RCE, backdoor, APT involvement, or multiple high indicators
-    if has_apt_tag or high_score >= 2 or (high_score >= 1 and medium_score >= 1):
+    # Also elevate to high for single strong HIGH indicators (RCE, arbitrary command, etc.)
+    if (has_apt_tag or high_score >= 2 or 
+        (high_score >= 1 and medium_score >= 1) or
+        (high_score >= 1 and any(ind in text for ind in ['remote code execution', 'remotely execute', 'arbitrary command']))):
         return 'high'
 
     # Medium: vulnerability/malware discussed

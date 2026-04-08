@@ -12,7 +12,7 @@ from utils import (
     get_trending_tags,
     _extract_tags_from_keywords_dynamic,
 )
-from export_utils import detect_severity
+from export_utils import detect_severity_with_ai
 from config import Config
 from .models import (
     AlertsListResponse,
@@ -153,7 +153,8 @@ async def get_alerts(
                 tags = _tag_cache.get(tags_cache_key, None)
 
                 if not tags:
-                    tags = _extract_tags_from_keywords_dynamic(title, display_analysis)
+                    content = article.get("content", "")
+                    tags = _extract_tags_from_keywords_dynamic(title, display_analysis, content)
                     if tags:
                         _tag_cache[tags_cache_key] = tags
                         db.set_article_tags(article_id, tags)
@@ -180,7 +181,7 @@ async def get_alerts(
                 date=article.get("date", ""),
                 analysis=display_analysis,
                 tags=tags,
-                severity=detect_severity(title, display_analysis or "", tags),
+                severity=detect_severity_with_ai(display_analysis or "", title, tags),
                 topic_sources=topic_sources,
             )
             all_alerts.append(alert)
@@ -256,7 +257,8 @@ async def get_alert(alert_id: int) -> AlertResponse:
 
         if not tags:
             from utils import _extract_tags_from_keywords_dynamic
-            tags = _extract_tags_from_keywords_dynamic(title, display_analysis or "", tags)
+            content = article.get("content", "")
+            tags = _extract_tags_from_keywords_dynamic(title, display_analysis or "", content)
             if tags:
                 _tag_cache[tags_cache_key] = tags
 
@@ -268,7 +270,7 @@ async def get_alert(alert_id: int) -> AlertResponse:
             date=article.get("date", ""),
             analysis=display_analysis,
             tags=tags,
-            severity=detect_severity(title, display_analysis or "", tags),
+            severity=detect_severity_with_ai(display_analysis or "", title, tags),
         )
     except HTTPException:
         raise
@@ -339,13 +341,14 @@ async def reanalyze_alert(alert_id: int) -> dict:
             del _tag_cache[tags_cache_key]
 
         # Extract new tags
-        new_tags = _extract_tags_from_keywords_dynamic(title, new_analysis)
+        content = article.get("content", "")
+        new_tags = _extract_tags_from_keywords_dynamic(title, new_analysis, content)
         if new_tags:
             _tag_cache[tags_cache_key] = new_tags
             db.set_article_tags(alert_id, new_tags)
 
         # Calculate new severity
-        new_severity = detect_severity(title, new_analysis, new_tags or [])
+        new_severity = detect_severity_with_ai(new_analysis, title, new_tags or [])
 
         logger.info(
             f"Re-analysis complete for alert {alert_id}: "

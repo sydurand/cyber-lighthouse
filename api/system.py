@@ -13,7 +13,7 @@ from cache import get_cache
 from optimization import get_call_counter
 from logging_config import logger
 from export_utils import (
-    detect_severity,
+    detect_severity_with_ai,
     export_alerts_to_csv,
     export_alerts_to_markdown,
 )
@@ -185,7 +185,7 @@ async def export_alerts(format: str = Query("markdown", pattern="^(markdown|csv)
             tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
             from utils import _tag_cache
             tags = _tag_cache.get(tags_cache_key, [])
-            severity = detect_severity(title, analysis or "", tags)
+            severity = detect_severity_with_ai(analysis or "", title, tags)
 
             alerts_data.append({
                 'id': article.get('id', 0),

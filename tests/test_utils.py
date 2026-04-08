@@ -12,6 +12,7 @@ from utils import (
     get_trending_tags,
     _deduplicate_by_keywords,
 )
+from export_utils import detect_severity, detect_severity_with_ai
 
 
 class TestRSSValidation:
@@ -290,6 +291,184 @@ class TestTagExtraction:
         """Test with empty content."""
         tags = _extract_tags_from_keywords_dynamic("", "")
         assert tags == []
+
+    def test_extract_cve_from_full_article_content(self):
+        """Test CVE extraction from full article content when AI analysis doesn't include it.
+        
+        Regression test for BleepingComputer ActiveMQ article (CVE-2026-34197)
+        where RSS feed had no summary and CVE was only in full article content.
+        """
+        title = "13-year-old bug in ActiveMQ lets hackers remotely execute commands"
+        # Simulate AI analysis that doesn't mention the CVE explicitly
+        analysis = "Remote code execution vulnerability in Apache ActiveMQ Classic. High severity vulnerability."
+        # Full article content contains CVE
+        content = "Tracked as CVE-2026-34197, the security issue received a high severity score of 8.8..."
+
+        tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
+        assert "#CVE-2026-34197" in tags
+
+    def test_extract_multiple_cves_from_full_article_content(self):
+        """Test extraction of multiple CVEs from full article content."""
+        title = "ActiveMQ vulnerability details"
+        analysis = "RCE vulnerability in ActiveMQ"
+        content = """CVE-2026-34197 is the main flaw. However, versions 6.0.0 through 6.1.1 
+        are also affected by CVE-2024-32114 which exposes the API without access control.
+        Previous ActiveMQ CVEs like CVE-2016-3088 and CVE-2023-46604 are on CISA's KEV list."""
+
+        tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
+        assert "#CVE-2026-34197" in tags
+        assert "#CVE-2024-32114" in tags
+        assert "#CVE-2016-3088" in tags
+        assert "#CVE-2023-46604" in tags
+        # Multiple CVEs should also get generic #CVE tag
+        assert "#CVE" in tags
+
+
+class TestSeverityDetection:
+    """Test severity detection logic."""
+
+    def test_rce_vulnerability_is_high(self):
+        """Test that RCE vulnerabilities are classified as HIGH.
+        
+        Regression test for ActiveMQ CVE-2026-34197 where title 
+        'lets hackers remotely execute commands' should be HIGH.
+        """
+        title = "13-year-old bug in ActiveMQ lets hackers remotely execute commands"
+        analysis = "Remote code execution vulnerability in Apache ActiveMQ Classic. High severity score of 8.8."
+        tags = ["#CVE-2026-34197", "#Vulnerability"]
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "high"
+
+    def test_remote_code_execution_is_high(self):
+        """Test that explicit 'remote code execution' is HIGH."""
+        title = "Critical RCE in popular software"
+        analysis = "Remote code execution vulnerability allows attackers..."
+        tags = ["#CVE"]
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "high"
+
+    def test_arbitrary_command_execution_is_high(self):
+        """Test that arbitrary command execution is HIGH."""
+        title = "Bug allows arbitrary command execution"
+        analysis = "Attackers can execute arbitrary commands on affected systems..."
+        tags = []
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "high"
+
+    def test_patch_available_caps_at_high(self):
+        """Test that patch availability caps severity at HIGH max."""
+        title = "Microsoft Patch Tuesday fixes critical flaws"
+        analysis = "Patch available for critical vulnerability. No active exploitation detected."
+        tags = ["#CVE"]
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "high"
+
+    def test_active_exploitation_is_critical(self):
+        """Test that active exploitation elevates to CRITICAL."""
+        title = "Zero-day under active exploitation"
+        analysis = "Active exploitation detected in the wild. No patch available."
+        tags = ["#zeroday"]
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "critical"
+
+    def test_generic_vulnerability_is_medium(self):
+        """Test that generic vulnerability discussion is MEDIUM."""
+        title = "New vulnerabilities discovered"
+        analysis = "Researchers found new vulnerability in software..."
+        tags = ["#Vulnerability"]
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "medium"
+
+    def test_informational_is_low(self):
+        """Test that informational/advisory content is LOW."""
+        title = "Security best practices guide"
+        analysis = "Informational guidance and best practices for securing systems..."
+        tags = []
+        
+        severity = detect_severity(title, analysis, tags)
+        assert severity == "low"
+
+
+class TestAIDrivenSeverityDetection:
+    """Test AI-driven severity detection (parses AI analysis output)."""
+
+    def test_cvss_score_critical(self):
+        """Test CVSS 9+ is detected as CRITICAL."""
+        analysis = "🚨 ALERT: Apache ActiveMQ RCE vulnerability, CVSS 9.8. Remote code execution via Jolokia API."
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "critical"
+
+    def test_cvss_score_high(self):
+        """Test CVSS 7-8.9 is detected as HIGH."""
+        analysis = "🚨 ALERT: ActiveMQ vulnerability, severity CVSS 8.8. Remote code execution."
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "high"
+
+    def test_cvss_score_medium(self):
+        """Test CVSS 4-6.9 is detected as MEDIUM."""
+        analysis = "🚨 ALERT: Information disclosure vulnerability, CVSS 5.3."
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "medium"
+
+    def test_cvss_score_low(self):
+        """Test CVSS < 4 is detected as LOW."""
+        analysis = "🚨 ALERT: Minor info leak, CVSS 2.1."
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "low"
+
+    def test_explicit_high_severity(self):
+        """Test explicit 'high severity' mention is detected."""
+        analysis = """🚨 **ALERT**: Remote code execution vulnerability in Apache ActiveMQ Classic, high severity.
+  Attackers can execute arbitrary commands via Jolokia management API.
+  Affects versions before 5.19.4 and 6.0.0-6.2.3."""
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "high"
+
+    def test_explicit_critical_severity(self):
+        """Test explicit 'critical severity' with active exploitation context."""
+        analysis = """🚨 **ALERT**: Zero-day under active exploitation, critical severity CVSS 10.0.
+  Nation-state actors actively exploiting in the wild. No patch available."""
+        severity = detect_severity_with_ai(analysis)
+        assert severity == "critical"
+
+    def test_fallback_to_keyword_detection(self):
+        """Test fallback to keyword-based detection when AI output is unclear."""
+        analysis = "Some vulnerability was found. Details pending."
+        title = "New bug in software"
+        tags = []
+        severity = detect_severity_with_ai(analysis, title, tags)
+        # Falls back to detect_severity which checks for 'vulnerability' -> medium
+        assert severity == "medium"
+
+    def test_activemq_article_scenario(self):
+        """Test ActiveMQ CVE-2026-34197 scenario with realistic AI output.
+        
+        This is the actual expected format from our AI analysis prompt.
+        """
+        title = "13-year-old bug in ActiveMQ lets hackers remotely execute commands"
+        analysis = """🚨 **ALERT**: Remote code execution (RCE) vulnerability in Apache ActiveMQ Classic, high severity (CVSS 8.8).
+  CVE-2026-34197 via Jolokia management API addNetworkConnector function. Affects <5.19.4, 6.0.0-6.2.3.
+  No active exploitation reported; PoC likely. Versions 6.0.0-6.1.1 exploitable without auth via CVE-2024-32114.
+
+💥 **IMPACT**: Enterprise Java backends, web services, government systems using ActiveMQ Classic.
+  Urgent: Patch to 5.19.4+ or 6.2.3+ immediately. Monitor for suspicious VM transport connections.
+
+🏷️ **TAGS**: [#RemoteCodeExecution, #CVE-2026-34197, #AuthenticationBypass, #Java]"""
+        tags = ["#RemoteCodeExecution", "#CVE-2026-34197", "#AuthenticationBypass", "#Java"]
+
+        severity = detect_severity_with_ai(analysis, title, tags)
+        assert severity == "high"
+
+    def test_empty_analysis_falls_back(self):
+        """Test empty analysis falls back to keyword detection."""
+        severity = detect_severity_with_ai("", "Some title", [])
+        assert severity == "medium"  # Default from keyword fallback
 
 
 class TestTrendingTags:

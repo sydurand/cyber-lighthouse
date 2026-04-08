@@ -219,6 +219,12 @@ def extract_article_content(article) -> str:
         else:
             content = str(article.content)
 
+    # Strip HTML tags if present
+    if content and '<' in content:
+        import re
+        content = re.sub(r'<[^>]+>', ' ', content)
+        content = re.sub(r'\s+', ' ', content).strip()
+
     return content[:2000] if content else ""  # Limit to 2000 chars
 
 
@@ -582,7 +588,7 @@ def highlight_cves_in_text(text: str) -> str:
     return highlighted
 
 
-def extract_tags_with_ai(title: str, analysis: str) -> list:
+def extract_tags_with_ai(title: str, analysis: str, content: str = "") -> list:
     """
     Extract security tags from article title and analysis using AI.
 
@@ -608,7 +614,7 @@ def extract_tags_with_ai(title: str, analysis: str) -> list:
         call_counter = get_call_counter()
         if not call_counter.can_make_call():
             logger.warning(f"Rate limit approaching, using keyword fallback for tags")
-            fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
+            fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
             _tag_cache[cache_key] = fallback_tags
             return fallback_tags
 
@@ -715,14 +721,14 @@ INSTRUCTIONS:
 
         # If AI returned no valid tags, use keyword fallback
         logger.debug(f"AI returned no valid tags, using keyword fallback")
-        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
         _tag_cache[cache_key] = fallback_tags
         return fallback_tags
 
     except Exception as e:
         logger.debug(f"AI tag extraction failed (falling back to keywords): {e}")
         # Use keyword fallback if AI fails
-        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis)
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
         _tag_cache[cache_key] = fallback_tags
         return fallback_tags
 
@@ -1007,15 +1013,21 @@ def MAX_TAGS_PER_ARTICLE():
     return get_max_tags()
 
 
-def _extract_tags_from_keywords_dynamic(title: str, analysis: str) -> list:
+def _extract_tags_from_keywords_dynamic(title: str, analysis: str, content: str = "") -> list:
     """
     Extract tags using controlled vocabulary from tags.json (keyword-based fallback).
 
     Maps article content to the controlled TAG_CATEGORIES set.
     Returns limited, standardized tags for trend tracking.
+
+    Args:
+        title: Article title
+        analysis: AI analysis text (may contain CVEs, severity info)
+        content: Full article content (optional, used for CVE extraction when available)
     """
     import re
-    text = f"{title} {analysis}".lower()
+    # Include full content in text search when available (for CVE extraction)
+    text = f"{title} {analysis} {content}".lower()
     tags = []
 
     valid_tags = get_tag_categories()
