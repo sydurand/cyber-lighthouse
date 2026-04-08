@@ -54,6 +54,19 @@ class Config:
 
     RSS_FEEDS = _load_rss_feeds.__func__()
 
+    @classmethod
+    def reload_feeds(cls) -> dict:
+        """Reload RSS feeds from database and update the class attribute.
+
+        Called at the start of each processing cycle so that feed changes
+        in settings take effect without requiring a server restart.
+
+        Returns:
+            Updated RSS feeds dict {name: url}
+        """
+        cls.RSS_FEEDS = cls._load_rss_feeds()
+        return cls.RSS_FEEDS
+
     # CISA Feed
     CISA_KEV_URL = os.getenv("CISA_KEV_URL", "https://www.cisa.gov/cybersecurity-advisories/all.xml")
 

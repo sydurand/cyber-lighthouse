@@ -321,6 +321,17 @@ def process_new_articles():
     cutoff_date = datetime.now() - timedelta(days=1)
     articles_filtered_by_date = 0
 
+    # Reload feeds from database so settings changes take effect immediately
+    previous_feeds = dict(Config.RSS_FEEDS)
+    Config.reload_feeds()
+    if Config.RSS_FEEDS != previous_feeds:
+        added = set(Config.RSS_FEEDS) - set(previous_feeds)
+        removed = set(previous_feeds) - set(Config.RSS_FEEDS)
+        if added:
+            logger.info(f"New feeds added: {', '.join(added)}")
+        if removed:
+            logger.info(f"Feeds removed: {', '.join(removed)}")
+
     for source, url in Config.RSS_FEEDS.items():
         try:
             logger.info(f"Processing feed: {source}")
