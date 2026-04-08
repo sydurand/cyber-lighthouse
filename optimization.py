@@ -51,8 +51,8 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
     """
     Detect if article is too similar to existing ones.
 
-    Uses semantic embeddings first, falls back to AI verification for uncertain cases,
-    then title keyword matching as final fallback.
+    Uses semantic embeddings (title + content) first, falls back to AI verification
+    for uncertain cases, then entity-based matching as final fallback.
 
     Args:
         article: Article to check
@@ -65,14 +65,21 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
     """
     article_hash = compute_article_hash(article["title"], article.get("content", ""))
 
-    # Try semantic similarity first
+    # Try semantic similarity first (use title + content for better embeddings)
     model = _get_embedding_model()
     if model is not None:
         try:
             import numpy as np
-            titles = [article["title"]] + [e["title"] for e in existing_articles]
-            embeddings = model.encode(titles, convert_to_numpy=True)
-            
+
+            def _make_text(a):
+                """Build text from title + content for embedding."""
+                title = a.get("title", "")
+                content = a.get("content", "")[:300]
+                return f"{title}. {content}" if content else title
+
+            texts = [_make_text(article)] + [_make_text(e) for e in existing_articles]
+            embeddings = model.encode(texts, convert_to_numpy=True)
+
             article_embedding = embeddings[0]
             for i, existing in enumerate(existing_articles):
                 # Exact hash match = duplicate
@@ -80,15 +87,18 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
                 if article_hash == existing_hash:
                     logger.debug(f"Duplicate detected: {article['title'][:50]}...")
                     return True
-                
-                # Semantic similarity
+
+                # Semantic similarity (lowered threshold for title+content embeddings)
                 sim = _cosine_similarity(article_embedding, embeddings[i + 1])
-                if sim >= similarity_threshold:
-                    logger.debug(f"Similar article detected (semantic): {article['title'][:50]}... (similarity: {sim:.2f})")
+                if sim >= 0.55:  # Lower threshold since we now include content
+                    logger.debug(
+                        f"Similar article detected (semantic): {article['title'][:50]}... "
+                        f"(similarity: {sim:.2f})"
+                    )
                     return True
-                
+
                 # Uncertain zone - use AI to verify
-                if 0.45 <= sim < similarity_threshold:
+                if 0.40 <= sim < 0.55:
                     content1 = article.get("content", "")
                     content2 = existing.get("content", "")
                     if len(content1) > 50 or len(content2) > 50:
@@ -102,19 +112,67 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
         except Exception as e:
             logger.debug(f"Semantic similarity check failed: {e}")
 
-    # Fallback to title keyword similarity
+    # Fallback: entity-based matching (actor + target overlap)
+    return _check_entity_similarity(article, existing_articles)
+
+
+def _check_entity_similarity(article: dict, existing_articles: list) -> bool:
+    """
+    Check similarity using extracted entities: threat actors, targets, techniques.
+
+    Handles cases where titles use different wording for the same topic
+    (e.g., 'PLCs' vs 'programmable logic controllers', 'hackers' vs 'threat actors').
+    """
+    import re
+
+    new_title = article.get("title", "").lower()
+    new_content = article.get("content", "").lower()
+    new_text = f"{new_title} {new_content}"
+
     for existing in existing_articles:
-        existing_hash = compute_article_hash(existing["title"], existing.get("content", ""))
+        existing_title = existing.get("title", "").lower()
+        existing_content = existing.get("content", "").lower()
+        existing_text = f"{existing_title} {existing_content}"
 
-        # Exact hash match = duplicate
-        if article_hash == existing_hash:
-            logger.debug(f"Duplicate detected: {article['title'][:50]}...")
-            return True
+        # 1. Title Jaccard similarity (lowered threshold)
+        new_words = set(re.findall(r'\b\w{3,}\b', new_title))
+        existing_words = set(re.findall(r'\b\w{3,}\b', existing_title))
+        if new_words and existing_words:
+            intersection = len(new_words & existing_words)
+            union = len(new_words | existing_words)
+            jaccard = intersection / union
+            if jaccard > 0.30:
+                logger.debug(
+                    f"Keyword similarity match ({jaccard:.3f}): "
+                    f"'{new_title[:60]}' ~= '{existing_title[:60]}'"
+                )
+                return True
 
-        # Check title similarity
-        title_sim = _string_similarity(article["title"], existing["title"])
-        if title_sim > similarity_threshold:
-            logger.debug(f"Similar article detected (keyword): {article['title'][:50]}... (similarity: {title_sim:.2f})")
+        # 2. Entity-based matching: extract key entities and check overlap
+        actor_patterns = [
+            r'iranian', r'russian', r'chinese', r'north\s*korean',
+            r'apt\d+', r'hackers?\b', r'threat\s*actors?\b',
+            r'cyber\s*actors?\b', r'adversar',
+        ]
+        new_actors = {p for p in actor_patterns if re.search(p, new_text)}
+        existing_actors = {p for p in actor_patterns if re.search(p, existing_text)}
+
+        target_patterns = [
+            r'critical\s*infrastructure', r'plc', r'programmable\s*logic',
+            r'industrial', r'ics\b', r'ot\s*security', r'scada',
+            r'healthcare', r'hospital', r'education', r'energy',
+            r'government', r'military', r'defense',
+        ]
+        new_targets = {p for p in target_patterns if re.search(p, new_text)}
+        existing_targets = {p for p in target_patterns if re.search(p, existing_text)}
+
+        # Match if both actor AND target overlap
+        if (new_actors & existing_actors) and (new_targets & existing_targets):
+            logger.debug(
+                f"Entity match: actors={new_actors & existing_actors}, "
+                f"targets={new_targets & existing_targets} | "
+                f"'{new_title[:60]}' ~= '{existing_title[:60]}'"
+            )
             return True
 
     return False

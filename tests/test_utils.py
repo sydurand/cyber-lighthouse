@@ -13,6 +13,7 @@ from utils import (
     _deduplicate_by_keywords,
 )
 from export_utils import detect_severity, detect_severity_with_ai
+from optimization import detect_similar_articles as detect_similar_opt, _check_entity_similarity
 
 
 class TestRSSValidation:
@@ -469,6 +470,80 @@ class TestAIDrivenSeverityDetection:
         """Test empty analysis falls back to keyword detection."""
         severity = detect_severity_with_ai("", "Some title", [])
         assert severity == "medium"  # Default from keyword fallback
+
+
+class TestArticleSimilarityDetection:
+    """Test the optimization module's article similarity detection (used at ingestion time)."""
+
+    def test_iranian_plc_articles_clustered(self):
+        """Regression test: three Iranian PLC articles should be clustered together.
+        
+        These articles use different wording but cover the same threat:
+        - Dark Reading: 'Iranian threat actors: US critical infrastructure exposed PLCs'
+        - DataBreaches: 'Iranian-affiliated cyber actors exploit programmable logic controllers...'
+        - BleepingComputer: 'US warns of Iranian hackers targeting critical infrastructure'
+        """
+        article1 = {
+            'title': 'Iranian threat actors: US critical infrastructure exposed PLCs',
+            'content': 'Iranian threat actors have exposed programmable logic controllers (PLCs)...',
+        }
+        article2 = {
+            'title': 'Iranian-affiliated cyber actors exploit programmable logic controllers across US critical infrastructure',
+            'content': 'Iranian-affiliated cyber actors are exploiting programmable logic controllers...',
+        }
+        article3 = {
+            'title': 'US warns of Iranian hackers targeting critical infrastructure',
+            'content': 'The US government has issued a warning about Iranian hackers...',
+        }
+
+        existing = [article1]
+        assert detect_similar_opt(article2, existing) is True
+        assert detect_similar_opt(article3, existing) is True
+
+    def test_entity_matching_with_empty_content(self):
+        """Test entity-based fallback when RSS feeds have no content."""
+        article1 = {
+            'title': 'Iranian threat actors: US critical infrastructure exposed PLCs',
+            'content': '',  # Empty RSS summary
+        }
+        article2 = {
+            'title': 'US warns of Iranian hackers targeting critical infrastructure',
+            'content': '',
+        }
+        unrelated = {
+            'title': 'New ransomware gang targets healthcare',
+            'content': '',
+        }
+
+        existing = [article1]
+        assert _check_entity_similarity(article2, existing) is True
+        assert _check_entity_similarity(unrelated, existing) is False
+
+    def test_different_actors_same_target_not_matched(self):
+        """Test that different threat actors targeting same sector are NOT clustered."""
+        article1 = {
+            'title': 'Russian APT targets energy sector',
+            'content': 'Russian state-sponsored actors targeting energy infrastructure...',
+        }
+        article2 = {
+            'title': 'Chinese hackers target energy grid',
+            'content': 'Chinese cyber actors conducting reconnaissance against energy companies...',
+        }
+
+        # Both target 'energy' but different actors - should still cluster
+        # (both are state actors targeting critical infrastructure)
+        existing = [article1]
+        # They share target but different actors - entity match requires BOTH
+        result = _check_entity_similarity(article2, existing)
+        # 'russian' != 'chinese', 'apt' != 'hackers' - no actor overlap
+        # Both have energy/critical infrastructure - target overlap
+        # But need actor overlap too, so should be False
+        assert result is False
+
+    def test_empty_existing_articles(self):
+        """Test with no existing articles."""
+        article = {'title': 'Test', 'content': ''}
+        assert detect_similar_opt(article, []) is False
 
 
 class TestTrendingTags:
