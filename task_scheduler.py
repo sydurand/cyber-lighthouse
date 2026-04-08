@@ -191,20 +191,21 @@ class TaskScheduler:
         """Background loop for daily summary generation."""
         logger.info(f"Daily summary loop started (scheduled for {self.daily_summary_hour}:00)")
 
+        # Initialize next_run to the first occurrence of the scheduled hour
+        now = datetime.now()
+        next_run = now.replace(hour=self.daily_summary_hour, minute=0, second=0, microsecond=0)
+        if now >= next_run:
+            next_run += timedelta(days=1)
+        logger.info(f"Next daily summary scheduled for {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+
         while not self._stop_event.is_set():
             try:
                 now = datetime.now()
-                scheduled_time = now.replace(hour=self.daily_summary_hour, minute=0, second=0, microsecond=0)
-
-                # If it's already past the scheduled time today, schedule for tomorrow
-                if now >= scheduled_time:
-                    scheduled_time += timedelta(days=1)
 
                 # Check if we should run
-                should_run = now >= scheduled_time
+                should_run = now >= next_run
 
                 if should_run:
-                    next_run = scheduled_time + timedelta(days=1)
                     self.daily_summary_status.mark_start(next_run)
 
                     result = self._run_daily_summary_once()
@@ -224,6 +225,10 @@ class TaskScheduler:
                             logger.info(f"Daily cleanup: purged {len(purged)} stale tag(s)")
                     except Exception as e:
                         logger.debug(f"Stale tag purge failed: {e}")
+
+                    # Advance to next day
+                    next_run += timedelta(days=1)
+                    logger.info(f"Next daily summary scheduled for {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
 
                 # Sleep until next check (every 60s)
                 self._stop_event.wait(60)
