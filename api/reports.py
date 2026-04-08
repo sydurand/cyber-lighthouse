@@ -106,10 +106,6 @@ async def export_report(report_index: int, format: str = Query("markdown", patte
             export_content = export_report_to_markdown(content, date)
             filename = f"report_{date}.md"
             media_type = "text/markdown"
-        else:
-            export_content = content
-            filename = f"report_{date}.txt"
-            media_type = "text/plain"
 
         return StreamingResponse(
             io.BytesIO(export_content.encode("utf-8")),

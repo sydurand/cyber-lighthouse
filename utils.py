@@ -241,19 +241,6 @@ def sanitize_title(title: str) -> str:
     return " ".join(title.split())[:500]  # Limit to 500 chars
 
 
-def format_log_message(level: str, message: str) -> str:
-    """Format a message for consistent logging output."""
-    icons = {
-        "info": "ℹ️",
-        "warning": "⚠️",
-        "error": "❌",
-        "success": "✅",
-        "debug": "🔍",
-    }
-    icon = icons.get(level.lower(), "•")
-    return f"{icon} {message}"
-
-
 def detect_similar_articles(articles: list) -> dict:
     """
     Group similar articles using semantic similarity via embeddings.
@@ -999,18 +986,6 @@ def get_generic_patterns():
     """Get generic pattern mappings for tag extraction."""
     _load_tags_config()
     return _tags_config.get("generic_patterns", {})
-
-
-# Module-level getters (called at import time, then use functions)
-# For code that imports TAG_CATEGORIES, MAX_TAGS_PER_ARTICLE
-def TAG_CATEGORIES():
-    """Get the controlled tag vocabulary set."""
-    return get_tag_categories()
-
-
-def MAX_TAGS_PER_ARTICLE():
-    """Get max tags per article."""
-    return get_max_tags()
 
 
 def _extract_tags_from_keywords_dynamic(title: str, analysis: str, content: str = "") -> list:

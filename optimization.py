@@ -20,17 +20,10 @@ def compute_article_hash(title: str, content: str) -> str:
 
 
 def _get_embedding_model():
-    """Get embedding model instance (lazy-loaded). Returns None if unavailable."""
-    try:
-        from sentence_transformers import SentenceTransformer
-        model_name = Config.EMBEDDING_MODEL
-        # Use module-level cache to avoid reloading
-        if not hasattr(_get_embedding_model, '_model'):
-            _get_embedding_model._model = SentenceTransformer(model_name)
-        return _get_embedding_model._model
-    except Exception as e:
-        logger.debug(f"Embedding model not available: {e}")
-        return None
+    """Get embedding model instance (delegated to utils.py for shared caching)."""
+    # Import lazily to avoid circular import
+    from utils import _get_embedding_model as _utils_get_model
+    return _utils_get_model()
 
 
 def _cosine_similarity(vec1, vec2) -> float:
@@ -178,26 +171,6 @@ def _check_entity_similarity(article: dict, existing_articles: list) -> bool:
     return False
 
 
-def _string_similarity(s1: str, s2: str) -> float:
-    """
-    Calculate Jaro-Winkler similarity between two strings.
-
-    Returns:
-        Similarity score between 0 and 1
-    """
-    # Simple implementation: common words ratio
-    words1 = set(s1.lower().split())
-    words2 = set(s2.lower().split())
-
-    if not words1 or not words2:
-        return 0.0
-
-    common = len(words1 & words2)
-    total = len(words1 | words2)
-
-    return common / total if total > 0 else 0.0
-
-
 def should_analyze_article(article: dict, analyzed_articles: list) -> bool:
     """
     Determine if article should be analyzed (to save API calls).
@@ -237,66 +210,22 @@ def should_analyze_article(article: dict, analyzed_articles: list) -> bool:
     return True
 
 
-def batch_articles_for_analysis(articles: list, batch_size: int = 3) -> list:
+def estimate_api_calls(articles: list, batch_size: int = 3) -> dict:
     """
-    Group articles into batches for efficient processing.
-
-    Allows analyzing multiple articles in fewer API calls.
-
-    Args:
-        articles: List of articles to batch
-        batch_size: Articles per batch
-
-    Returns:
-        List of article batches
-    """
-    batches = []
-    for i in range(0, len(articles), batch_size):
-        batch = articles[i:i + batch_size]
-        batches.append(batch)
-
-    logger.debug(f"Grouped {len(articles)} articles into {len(batches)} batches")
-    return batches
-
-
-def estimate_api_calls(articles: list, with_synthesis: bool = True, with_caching: bool = True) -> dict:
-    """
-    Estimate how many API calls will be needed for OpenRouter.
-
-    Helps user understand rate limit impact.
+    Estimate how many API calls will be needed.
 
     Args:
         articles: Articles to be processed
-        with_synthesis: Will synthesis report be generated?
-        with_caching: Will caching reduce calls?
+        batch_size: Articles per batch
 
     Returns:
         Dict with call estimates
     """
-    base_calls = len(articles)  # One per article
-
-    # Caching reduces calls (estimated 30% of articles already cached)
-    if with_caching:
-        cached_calls = int(base_calls * 0.3)
-        base_calls = max(1, base_calls - cached_calls)
-    else:
-        cached_calls = 0
-
-    # Synthesis adds one call
-    synthesis_calls = 1 if with_synthesis else 0
-
-    total_calls = base_calls + synthesis_calls
-
-    # OpenRouter free tier: ~10 req/min
-    openrouter_limit = 10
-
+    batches = len(articles) // batch_size + (1 if len(articles) % batch_size else 0)
     return {
-        "article_analyses": base_calls,
-        "cached_analyses": cached_calls,
-        "synthesis_call": synthesis_calls,
-        "total_calls": total_calls,
-        "openrouter_limit_per_minute": openrouter_limit,
-        "will_exceed_limit": total_calls > openrouter_limit
+        "articles": len(articles),
+        "batches": batches,
+        "batch_size": batch_size,
     }
 
 
@@ -320,24 +249,6 @@ def optimize_for_rate_limit() -> dict:
     }
 
 
-def optimize_for_production() -> dict:
-    """
-    Get optimization settings for production (paid tier).
-
-    Returns:
-        Dict with recommended settings
-    """
-    return {
-        "max_articles_per_run": 50,  # Can handle much more
-        "batch_size": 10,  # Batch multiple articles
-        "enable_caching": True,  # Still cache for cost savings
-        "enable_similarity_check": True,  # Still skip duplicates
-        "enable_filtering": True,  # Still filter low-value
-        "recommended_frequency": "30 minutes",  # More frequent monitoring
-        "description": "Optimized for production (1500 req/min limit)"
-    }
-
-
 class APICallCounter:
     """Track API call usage to monitor rate limits (OpenRouter aware)."""
 
@@ -357,11 +268,6 @@ class APICallCounter:
         if self.last_reset is None or (current_time - self.last_reset) >= 60:
             self.calls_this_minute = 0
             self.last_reset = current_time
-
-    def reset_minute(self):
-        """Reset minute counter."""
-        self.calls_this_minute = 0
-        self.last_reset = None
 
     def add_call(self, count: int = 1):
         """

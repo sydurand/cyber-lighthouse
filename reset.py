@@ -1,7 +1,6 @@
 """Reset script to clear all data and reinitialize the system."""
 import os
 import shutil
-import sqlite3
 from pathlib import Path
 from logging_config import logger
 

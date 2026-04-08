@@ -2,7 +2,6 @@
 from datetime import datetime, timedelta
 import os
 import json
-import hashlib
 
 from config import Config
 from logging_config import logger

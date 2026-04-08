@@ -1,6 +1,5 @@
 """FastAPI web server for Cyber-Lighthouse dashboard."""
 import os
-import sys
 import time
 from datetime import datetime
 from contextlib import asynccontextmanager

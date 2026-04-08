@@ -106,17 +106,6 @@ class SystemStatusResponse(BaseModel):
     api_quota_reset_in_seconds: int
 
 
-class SearchArticlesRequest(BaseModel):
-    """Request model for article search."""
-
-    search: Optional[str] = None
-    source: Optional[str] = None
-    date_from: Optional[str] = None
-    date_to: Optional[str] = None
-    limit: int = 20
-    offset: int = 0
-
-
 class FilterStats(BaseModel):
     """Statistics about filtering and deduplication."""
 
@@ -160,20 +149,6 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
-
-
-class ExportResponse(BaseModel):
-    """Response model for exported data."""
-
-    content: str
-    filename: str
-    format: str  # markdown, csv, pdf
-
-
-class SeverityUpdate(BaseModel):
-    """Request to manually update alert severity."""
-
-    severity: str  # critical, high, medium, low
 
 
 class TagSuggestionResponse(BaseModel):

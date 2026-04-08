@@ -109,58 +109,6 @@ class ResponseCache:
         self._save_cache()
         logger.debug(f"Cached analysis for: {title[:50]}...")
 
-    def get_synthesis(self, articles_hash: str) -> dict | None:
-        """
-        Get cached synthesis report.
-
-        Args:
-            articles_hash: Hash of article IDs being synthesized
-
-        Returns:
-            Cached synthesis or None
-        """
-        cache_key = f"synthesis:{articles_hash}"
-
-        if cache_key not in self.cache:
-            logger.debug(f"Synthesis cache miss")
-            return None
-
-        entry = self.cache[cache_key]
-        created_at = datetime.fromisoformat(entry["created_at"])
-        age_hours = (datetime.now() - created_at).total_seconds() / 3600
-
-        # Cache expires after 24 hours for synthesis
-        if age_hours > 24:
-            logger.debug(f"Synthesis cache expired (age: {age_hours:.1f}h)")
-            del self.cache[cache_key]
-            self._save_cache()
-            return None
-
-        logger.debug(f"Synthesis cache hit (age: {age_hours:.1f}h)")
-        return entry["response"]
-
-    def set_synthesis(self, articles_hash: str, response: str, articles_count: int = 0):
-        """
-        Cache synthesis report.
-
-        Args:
-            articles_hash: Hash of article IDs
-            response: Synthesis report text
-            articles_count: Number of articles in the synthesis
-        """
-        cache_key = f"synthesis:{articles_hash}"
-        self.cache[cache_key] = {
-            "type": "synthesis",
-            "content": response,
-            "articles_count": articles_count,
-            "generated_date": datetime.now().strftime("%Y-%m-%d"),
-            "timestamp": datetime.now().isoformat(),
-            "created_at": datetime.now().isoformat(),
-            "response": response  # Keep for backward compatibility
-        }
-        self._save_cache()
-        logger.debug(f"Cached synthesis report")
-
     def clear_old_entries(self, days: int = 7):
         """
         Remove cache entries older than specified days.

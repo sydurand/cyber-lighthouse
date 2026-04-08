@@ -299,9 +299,3 @@ def export_report_to_markdown(report_content: str, report_date: str) -> str:
 
 """
     return header + report_content
-
-
-def generate_alert_id(alert: Dict) -> str:
-    """Generate a unique ID for an alert for bookmarking."""
-    key = f"{alert.get('title', '')}:{alert.get('date', '')}"
-    return hashlib.md5(key.encode()).hexdigest()[:12]

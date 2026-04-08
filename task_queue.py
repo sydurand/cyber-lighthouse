@@ -177,9 +177,3 @@ def get_task_queue(num_workers: int = 1, batch_delay: int = 2) -> TaskQueue:
                 _task_queue.start()
 
     return _task_queue
-
-
-def submit_task(task_id: str, func: Callable, args: tuple = (), kwargs: dict = None) -> Task:
-    """Submit a task to the global task queue."""
-    queue_instance = get_task_queue()
-    return queue_instance.submit(task_id, func, args, kwargs)
