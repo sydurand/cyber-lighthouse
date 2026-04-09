@@ -112,11 +112,13 @@ Be concise but informative. Each line should be a complete sentence."""
 
     try:
         logger.debug(f"Sending article to AI provider for analysis: {title[:50]}...")
+        # Use appropriate timeout based on provider
+        ai_timeout = Config.OLLAMA_TIMEOUT if ai_client.use_ollama else Config.GEMINI_TIMEOUT
         response_text = ai_client.generate_content(
             prompt=prompt,
             system_instruction=instruction,
             temperature=Config.GEMINI_TEMPERATURE_REALTIME,
-            timeout=Config.GEMINI_TIMEOUT
+            timeout=ai_timeout
         )
 
         # Highlight CVEs in the analysis

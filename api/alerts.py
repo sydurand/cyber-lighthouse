@@ -295,6 +295,10 @@ async def reanalyze_alert(alert_id: int) -> dict:
     try:
         from real_time import analyze_article_with_ai
         from optimization import get_call_counter
+        from cache import get_cache
+
+        # Get cache instance and clear any cached error state
+        cache = get_cache()
 
         # Get article from database
         articles = db.get_all_articles()
@@ -322,6 +326,13 @@ async def reanalyze_alert(alert_id: int) -> dict:
 
         logger.info(f"Manual re-analysis requested for alert {alert_id}: {title[:50]}...")
 
+        # Clear any cached error state for this article
+        cache_key = cache._hash_content(title, content)
+        if cache_key in cache.cache:
+            del cache.cache[cache_key]
+            cache._save_cache()
+            logger.debug(f"Cleared cache for article: {title[:50]}...")
+
         # Run blocking AI analysis in thread pool to avoid blocking the event loop
         import asyncio
         loop = asyncio.get_running_loop()
@@ -336,11 +347,30 @@ async def reanalyze_alert(alert_id: int) -> dict:
         if not new_analysis or new_analysis.startswith("⏳") or new_analysis.startswith("Analysis unavailable"):
             raise HTTPException(
                 status_code=502,
-                detail="AI analysis failed — service may be unavailable or rate limited"
+                detail="AI analysis failed — service may be unavailable or rate limited. Check logs for details."
             )
 
         # Update analysis in database
-        db.set_article_analysis(article.get("link", ""), new_analysis)
+        success = db.set_article_analysis(article.get("link", ""), new_analysis)
+        if not success:
+            logger.warning(f"Failed to update analysis in DB for alert {alert_id}, trying by ID...")
+            # Fallback: update by article ID if link doesn't work
+            try:
+                import sqlite3
+                with sqlite3.connect(db.db_file) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE articles SET analysis = ? WHERE id = ?", (new_analysis, alert_id))
+                    conn.commit()
+                    if cursor.rowcount > 0:
+                        logger.info(f"Updated analysis by ID for alert {alert_id}")
+                    else:
+                        raise Exception(f"No article found with ID {alert_id}")
+            except Exception as db_error:
+                logger.error(f"Failed to update analysis by ID: {db_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Analysis succeeded but failed to update database"
+                )
 
         # Clear tag cache to force re-extraction with new analysis
         tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()

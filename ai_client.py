@@ -103,7 +103,7 @@ class AIClient:
             )
         else:
             return self._ollama_generate(
-                prompt, system_instruction, temperature
+                prompt, system_instruction, temperature, timeout
             )
 
     def _openrouter_generate(
@@ -224,12 +224,14 @@ class AIClient:
         self,
         prompt: str,
         system_instruction: str,
-        temperature: float
+        temperature: float,
+        timeout: int = None
     ) -> str:
         """Generate content using Ollama API."""
         max_retries = 3
         retry_delay = 2
-        timeout = Config.OLLAMA_TIMEOUT
+        # Use passed timeout if provided, otherwise fall back to config
+        request_timeout = timeout if timeout is not None else Config.OLLAMA_TIMEOUT
 
         for attempt in range(max_retries):
             try:
@@ -257,7 +259,7 @@ class AIClient:
                 response = requests.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
-                    timeout=timeout
+                    timeout=request_timeout
                 )
 
                 response.raise_for_status()
