@@ -29,7 +29,7 @@ def reset_database():
 def reset_cache():
     """Clear the AI response cache."""
     cache_dir = "cache"
-    cache_file = os.path.join(cache_dir, "gemini_responses.json")
+    cache_file = os.path.join(cache_dir, "ai_responses.json")
 
     try:
         if os.path.exists(cache_file):

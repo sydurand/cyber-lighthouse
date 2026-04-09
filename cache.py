@@ -15,7 +15,7 @@ from config import Config
 class ResponseCache:
     """Cache for AI API responses to reduce API calls."""
 
-    def __init__(self, cache_file: str = "cache/gemini_responses.json"):
+    def __init__(self, cache_file: str = "cache/ai_responses.json"):
         """Initialize cache."""
         self.cache_file = cache_file
         self.cache_dir = Path(cache_file).parent
@@ -182,4 +182,4 @@ class ResponseCache:
 
 def get_cache() -> ResponseCache:
     """Get or create global cache instance."""
-    return ResponseCache(cache_file="cache/gemini_responses.json")
+    return ResponseCache(cache_file="cache/ai_responses.json")

@@ -81,7 +81,7 @@ def fetch_cisa_context():
 
 def cache_synthesis_report(summary_text, topics, articles_hash):
     """Saves the synthesis report to the cache for the web interface."""
-    cache_file = "cache/gemini_responses.json"
+    cache_file = "cache/ai_responses.json"
     cache_data = {}
 
     # Load existing cache
