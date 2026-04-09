@@ -5,6 +5,7 @@ import tempfile
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+import sys
 
 
 @pytest.fixture
@@ -31,7 +32,8 @@ def mock_config(monkeypatch, temp_db):
         mock_cfg.TEAMS_WEBHOOK_URL = "https://outlook.webhook.office.com/webhookb2/test"
         mock_cfg.GEMINI_MODEL = "gemini-2.5-flash"
         mock_cfg.TRAFILATURA_TIMEOUT = 30
-        mock_cfg.SEMANTIC_SIMILARITY_THRESHOLD = 0.65
+        mock_cfg.SEMANTIC_SIMILARITY_THRESHOLD = 0.60
+        mock_cfg.CLUSTERING_TIMEFRAME_DAYS = 14
         mock_cfg.MIN_CONTENT_LENGTH_FOR_SCRAPING = 300
         mock_cfg.API_DELAY_BETWEEN_REQUESTS = 5
         mock_cfg.EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -96,8 +98,35 @@ def sample_topics():
     ]
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
+def reset_embedding_model_state():
+    """Reset embedding model state before each test to ensure isolation."""
+    import utils
+    
+    # Reset embedding model and caches
+    utils._embedding_model = None
+    utils._clustering_ai_cache.clear()
+    utils._relevance_cache.clear()
+    utils._tag_cache.clear()
+    
+    yield
+
+
 def mock_logger():
     """Mock logger for testing."""
     with patch('logging_config.logger') as mock_log:
         yield mock_log
+
+
+@pytest.fixture
+def mock_embedding_model():
+    """Mock embedding model for clustering tests."""
+    import numpy as np
+    model = MagicMock()
+    # Return embeddings as numpy array
+    model.encode.side_effect = lambda texts, **kwargs: np.array([
+        [0.1, 0.2, 0.3, 0.4, 0.5],  # Mock embeddings
+        [0.11, 0.21, 0.31, 0.41, 0.51],
+        [0.9, 0.8, 0.7, 0.6, 0.5]
+    ])
+    return model

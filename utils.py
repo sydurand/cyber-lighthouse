@@ -248,36 +248,95 @@ def detect_similar_articles(articles: list) -> dict:
 
     Uses sentence-transformers to compute embeddings and cosine similarity.
     Falls back to keyword-based Jaccard similarity if embeddings unavailable.
+    
+    Only clusters articles published within the last N days (configurable via 
+    CLUSTERING_TIMEFRAME_DAYS) to prevent grouping unrelated articles from 
+    different time periods.
 
     Returns a dict where keys are article IDs and values are group IDs.
     Articles with the same group ID are considered duplicates/similar.
     """
+    from datetime import datetime, timedelta
+    
     if not articles or len(articles) < 2:
         return {a.get("id"): a.get("id") for a in articles}
+
+    # Filter articles by timeframe (only cluster recent articles together)
+    timeframe_days = Config.CLUSTERING_TIMEFRAME_DAYS
+    if timeframe_days > 0:
+        cutoff_date = datetime.now() - timedelta(days=timeframe_days)
+        
+        # Get article dates and filter
+        recent_articles = []
+        for article in articles:
+            article_date = article.get('date') or article.get('created_at')
+            if article_date:
+                try:
+                    if isinstance(article_date, str):
+                        parsed_date = datetime.fromisoformat(article_date.replace('Z', '+00:00'))
+                        parsed_date = parsed_date.replace(tzinfo=None)
+                    else:
+                        parsed_date = article_date
+                    
+                    if parsed_date >= cutoff_date:
+                        recent_articles.append(article)
+                    else:
+                        # Old article: assign to its own group
+                        article_id = article.get("id")
+                        if article_id is not None:
+                            groups = {}
+                except (ValueError, AttributeError):
+                    # If date parsing fails, include the article
+                    recent_articles.append(article)
+            else:
+                # No date: include the article to be safe
+                recent_articles.append(article)
+        
+        if len(recent_articles) < 2:
+            # Not enough recent articles to cluster
+            return {a.get("id"): a.get("id") for a in articles}
+        
+        articles_to_cluster = recent_articles
+    else:
+        # No timeframe filtering
+        articles_to_cluster = articles
 
     groups = {}
 
     # Try semantic embeddings first
-    embeddings = _try_semantic_clustering(articles)
+    embeddings = _try_semantic_clustering(articles_to_cluster)
     if embeddings is not None:
-        return _cluster_with_embeddings(articles, embeddings)
+        clustered_groups = _cluster_with_embeddings(articles_to_cluster, embeddings)
+    else:
+        # Fallback to keyword-based similarity
+        logger.debug("Using keyword-based similarity for article clustering")
+        clustered_groups = _cluster_with_keywords(articles_to_cluster)
+    
+    # Build final groups dict including articles that weren't clustered
+    final_groups = {}
+    for article in articles:
+        article_id = article.get("id")
+        if article_id in clustered_groups:
+            final_groups[article_id] = clustered_groups[article_id]
+        else:
+            # Article wasn't clustered (old or filtered out)
+            final_groups[article_id] = article_id
 
-    # Fallback to keyword-based similarity
-    logger.debug("Using keyword-based similarity for article clustering")
-    return _cluster_with_keywords(articles)
+    return final_groups
 
 
 def _try_semantic_clustering(articles: list) -> list:
-    """Attempt to compute embeddings for all articles. 
+    """Attempt to compute embeddings for all articles.
     Uses title + content snippet for better semantic representation.
     Returns None on failure.
     """
     try:
-        # Use title + first 200 chars of content for richer embeddings
+        # Use title + first 400 chars of content for richer embeddings
+        # (increased from 200 to capture more context about specific vulnerabilities)
         texts = []
         for a in articles:
             title = a.get("title", "")
-            content = a.get("content", "")[:200]  # First 200 chars for context
+            content = a.get("content", "")[:400]  # First 400 chars for context
             if content:
                 texts.append(f"{title}. {content}")
             else:
@@ -359,7 +418,7 @@ Answer ONLY with YES or NO. Do not explain."""
 def _cluster_with_embeddings(articles: list, embeddings) -> dict:
     """Cluster articles using cosine similarity on embeddings, with AI verification for uncertain cases."""
     import numpy as np
-    
+
     groups = {}
     threshold = Config.SEMANTIC_SIMILARITY_THRESHOLD
 
@@ -383,18 +442,21 @@ def _cluster_with_embeddings(articles: list, embeddings) -> dict:
             keyword_sim = len(title1_words & title2_words) / len(title1_words | title2_words) if (title1_words | title2_words) else 0
 
             # Tier 1: High confidence - cluster immediately
-            semantic_match = sim >= max(0.60, threshold * 0.92)
-            keyword_match = keyword_sim > 0.6
-            
+            # Lowered threshold from 0.60 to 0.55 to catch articles with different wording
+            # (e.g., "BlueHammer zero-day" vs "1 billion Microsoft users warned")
+            semantic_match = sim >= max(0.55, threshold * 0.85)
+            keyword_match = keyword_sim > 0.5  # Lowered from 0.6 to 0.5
+
             if semantic_match or keyword_match:
                 groups[article2.get("id")] = group_id
                 continue
-            
-            # Tier 2: Uncertain zone (0.45-0.60) - use AI to verify
-            if 0.45 <= sim < 0.60:
+
+            # Tier 2: Uncertain zone (0.40-0.60) - use AI to verify
+            # Expanded range from 0.45-0.60 to 0.40-0.60 to catch more borderline cases
+            if 0.40 <= sim < 0.60:
                 content1 = article1.get("content", "")
                 content2 = article2.get("content", "")
-                
+
                 # Only use AI if we have some content to analyze
                 if len(content1) > 50 or len(content2) > 50:
                     ai_verdict = _ai_verify_similarity(
@@ -404,9 +466,9 @@ def _cluster_with_embeddings(articles: list, embeddings) -> dict:
                     if ai_verdict:
                         groups[article2.get("id")] = group_id
                         continue
-            
+
             # Tier 3: Low confidence - don't cluster
-            # (sim < 0.45 or AI said no)
+            # (sim < 0.40 or AI said no)
 
     return groups
 
@@ -1529,10 +1591,13 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
     Cluster article into existing topics using semantic similarity.
 
     Uses sentence-transformers for embedding generation and cosine similarity for matching.
+    
+    Only considers topics from the last N days (configurable via CLUSTERING_TIMEFRAME_DAYS)
+    to prevent old, unrelated topics from incorrectly absorbing new articles.
 
     Args:
         new_article: New article dict with 'title' and 'content' keys
-        existing_topics: List of existing topic dicts with 'id', 'main_title', and 'embedding' keys
+        existing_topics: List of existing topic dicts with 'id', 'main_title', 'embedding', and 'created_at' keys
         threshold: Similarity threshold for clustering (0.0-1.0). Defaults to Config.SEMANTIC_SIMILARITY_THRESHOLD
 
     Returns:
@@ -1540,6 +1605,8 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
         - If is_new_topic=True: new topic should be created
         - If is_new_topic=False: article should be added to matched_topic_id
     """
+    from datetime import datetime, timedelta
+    
     if threshold is None:
         threshold = Config.SEMANTIC_SIMILARITY_THRESHOLD
 
@@ -1548,6 +1615,39 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
         if model is None:
             logger.debug("Embedding model unavailable, treating article as new topic")
             return (True, None)
+
+        # Filter topics by timeframe
+        timeframe_days = Config.CLUSTERING_TIMEFRAME_DAYS
+        if timeframe_days > 0:
+            cutoff_date = datetime.now() - timedelta(days=timeframe_days)
+            original_count = len(existing_topics)
+            
+            filtered_topics = []
+            for topic in existing_topics:
+                created_at = topic.get('created_at')
+                if created_at:
+                    try:
+                        if isinstance(created_at, str):
+                            topic_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            topic_date = topic_date.replace(tzinfo=None)
+                        else:
+                            topic_date = created_at
+                        
+                        if topic_date >= cutoff_date:
+                            filtered_topics.append(topic)
+                    except (ValueError, AttributeError):
+                        # If parsing fails, include the topic to be safe
+                        filtered_topics.append(topic)
+                else:
+                    # No date: include to be safe
+                    filtered_topics.append(topic)
+            
+            existing_topics = filtered_topics
+            if original_count != len(filtered_topics):
+                logger.debug(
+                    f"Timeframe filter: {len(filtered_topics)}/{original_count} topics "
+                    f"from last {timeframe_days} days"
+                )
 
         from sklearn.metrics.pairwise import cosine_similarity
         import numpy as np
@@ -1560,6 +1660,7 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
         # Find most similar topic
         best_match_id = None
         best_similarity = 0.0
+        best_topic_title = ''
 
         for topic in existing_topics:
             topic_embedding = topic.get('embedding')
@@ -1587,6 +1688,8 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
             return (False, best_match_id)
         else:
             reason = "no matching topics" if best_match_id is None else f"best similarity {best_similarity:.3f} < threshold {threshold:.2f}"
+            if timeframe_days > 0:
+                reason += f" (filtered to last {timeframe_days} days)"
             logger.info(f"✗ New topic created ({reason})")
             return (True, None)
 

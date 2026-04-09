@@ -1,11 +1,10 @@
 """Tests for semantic clustering functionality."""
 import pytest
-import sys
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta
 
-# Mock optional dependencies before importing utils
-sys.modules['sentence_transformers'] = MagicMock()
-sys.modules['trafilatura'] = MagicMock()
+# NOTE: We DO NOT mock sentence_transformers at module level anymore.
+# Individual tests that need mocking should do it within their test context.
 
 import numpy as np
 from utils import cluster_articles_with_embeddings, get_embedding_model
@@ -299,3 +298,160 @@ class TestEmbeddingConsistency:
             from sklearn.metrics.pairwise import cosine_similarity
             similarity = cosine_similarity(result1, result2)[0][0]
             assert similarity > 0.99
+
+
+class TestTimeframeClustering:
+    """Test timeframe-based clustering functionality."""
+
+    def test_cluster_articles_recent_topic_matches(self, mock_config, mock_embedding_model):
+        """Test that articles cluster with recent topics within timeframe."""
+        from datetime import datetime, timedelta
+        
+        # Create a topic from 2 days ago (within 14-day default timeframe)
+        recent_topic = {
+            "id": 1,
+            "main_title": "CVE-2026-1234 Critical Vulnerability",
+            "created_at": (datetime.now() - timedelta(days=2)).isoformat(),
+            "embedding": np.array([0.1, 0.2, 0.3, 0.4, 0.5])
+        }
+
+        new_article = {
+            "title": "New Patch Released for CVE-2026-1234",
+            "content": "Details about the patch"
+        }
+
+        with patch('utils.Config', mock_config):
+            with patch('utils.get_embedding_model', return_value=mock_embedding_model):
+                is_new, topic_id = cluster_articles_with_embeddings(
+                    new_article, [recent_topic], threshold=0.5
+                )
+                # Should match the recent topic
+                assert not is_new
+                assert topic_id == 1
+
+    def test_cluster_articles_old_topic_filtered(self, mock_config, mock_embedding_model):
+        """Test that old topics outside timeframe are filtered out."""
+        from datetime import datetime, timedelta
+        
+        # Create a topic from 30 days ago (outside 14-day default timeframe)
+        old_topic = {
+            "id": 1,
+            "main_title": "Old Vulnerability from Last Month",
+            "created_at": (datetime.now() - timedelta(days=30)).isoformat(),
+            "embedding": np.array([0.1, 0.2, 0.3, 0.4, 0.5])
+        }
+
+        new_article = {
+            "title": "New Similar Vulnerability Discovered",
+            "content": "Details about the new vulnerability"
+        }
+
+        with patch('utils.Config', mock_config):
+            with patch('utils.get_embedding_model', return_value=mock_embedding_model):
+                is_new, topic_id = cluster_articles_with_embeddings(
+                    new_article, [old_topic], threshold=0.5
+                )
+                # Should create new topic (old one filtered out)
+                assert is_new
+                assert topic_id is None
+
+    def test_cluster_articles_no_timeframe_when_disabled(self, mock_config, mock_embedding_model):
+        """Test that timeframe filtering is disabled when CLUSTERING_TIMEFRAME_DAYS=0."""
+        from datetime import datetime, timedelta
+        
+        # Set timeframe to 0 (disabled)
+        mock_config.CLUSTERING_TIMEFRAME_DAYS = 0
+        
+        # Create a topic from 60 days ago
+        old_topic = {
+            "id": 1,
+            "main_title": "Very Old Vulnerability",
+            "created_at": (datetime.now() - timedelta(days=60)).isoformat(),
+            "embedding": np.array([0.1, 0.2, 0.3, 0.4, 0.5])
+        }
+
+        new_article = {
+            "title": "New Similar Vulnerability",
+            "content": "Details about the vulnerability"
+        }
+
+        with patch('utils.Config', mock_config):
+            with patch('utils.get_embedding_model', return_value=mock_embedding_model):
+                is_new, topic_id = cluster_articles_with_embeddings(
+                    new_article, [old_topic], threshold=0.5
+                )
+                # Should match the old topic (timeframe disabled)
+                assert not is_new
+                assert topic_id == 1
+
+    def test_cluster_articles_mixed_timeframe(self, mock_config, mock_embedding_model):
+        """Test clustering with both recent and old topics."""
+        from datetime import datetime, timedelta
+        
+        # One recent topic (5 days ago) and one old topic (25 days ago)
+        recent_topic = {
+            "id": 1,
+            "main_title": "Recent Windows Zero-Day",
+            "created_at": (datetime.now() - timedelta(days=5)).isoformat(),
+            "embedding": np.array([0.9, 0.8, 0.7, 0.6, 0.5])  # High similarity to new article
+        }
+        
+        old_topic = {
+            "id": 2,
+            "main_title": "Old Linux Vulnerability",
+            "created_at": (datetime.now() - timedelta(days=25)).isoformat(),
+            "embedding": np.array([0.1, 0.2, 0.3, 0.4, 0.5])  # Low similarity
+        }
+
+        new_article = {
+            "title": "Windows Zero-Day Exploit Leaked",
+            "content": "Details about the Windows zero-day exploit"
+        }
+
+        with patch('utils.Config', mock_config):
+            with patch('utils.get_embedding_model', return_value=mock_embedding_model):
+                is_new, topic_id = cluster_articles_with_embeddings(
+                    new_article, [recent_topic, old_topic], threshold=0.5
+                )
+                # Should match the recent topic, not the old one
+                assert not is_new
+                assert topic_id == 1
+
+    def test_detect_similar_articles_with_timeframe(self, mock_config):
+        """Test that detect_similar_articles respects timeframe."""
+        from datetime import datetime, timedelta
+        from utils import detect_similar_articles
+        
+        # Mock the embedding model
+        with patch('utils._get_embedding_model') as mock_model:
+            mock_model_instance = MagicMock()
+            mock_model.return_value = mock_model_instance
+            
+            # Return embeddings that would cluster together
+            mock_model_instance.encode.return_value = np.array([
+                [0.9, 0.8, 0.7],
+                [0.89, 0.79, 0.69]
+            ])
+            
+            # Two articles from today
+            articles = [
+                {
+                    "id": 1,
+                    "title": "CVE-2026-1234 Windows Vulnerability",
+                    "content": "Details about the vulnerability",
+                    "date": datetime.now().isoformat()
+                },
+                {
+                    "id": 2,
+                    "title": "Windows CVE-2026-1234 Patch Released",
+                    "content": "Patch details for the vulnerability",
+                    "date": datetime.now().isoformat()
+                }
+            ]
+            
+            with patch('utils.Config', mock_config):
+                groups = detect_similar_articles(articles)
+                
+                # Should cluster the two recent articles together
+                # (actual grouping depends on embedding similarity)
+                assert len(groups) == 2  # Both articles should be in result

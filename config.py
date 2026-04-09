@@ -93,13 +93,25 @@ class Config:
     TRAFILATURA_TIMEOUT = int(os.getenv("TRAFILATURA_TIMEOUT", "30"))
     TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "")
     # Similarity threshold for clustering (0.0-1.0):
-    # - Lower (0.60-0.65): More aggressive clustering, articles grouped more easily
-    # - Higher (0.75-0.80): Stricter, only very similar articles grouped
-    # - Default 0.65: Balanced approach for cybersecurity articles
-    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.65"))
+    # - Lower (0.55-0.60): More aggressive clustering, articles grouped more easily
+    # - Higher (0.70-0.75): Stricter, only very similar articles grouped
+    # - Default 0.60: Balanced approach for cybersecurity articles
+    # 
+    # NOTE: The clustering algorithm uses tiered thresholds:
+    #   - Tier 1 (auto-cluster): sim >= max(0.55, threshold * 0.85)
+    #   - Tier 2 (AI verify): 0.40 <= sim < 0.60
+    #   - Tier 3 (no cluster): sim < 0.40
+    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.60"))
     MIN_CONTENT_LENGTH_FOR_SCRAPING = int(os.getenv("MIN_CONTENT_LENGTH_FOR_SCRAPING", "300"))
     API_DELAY_BETWEEN_REQUESTS = int(os.getenv("API_DELAY_BETWEEN_REQUESTS", "5"))
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+    # Clustering timeframe: Only cluster articles with topics from the last N days.
+    # This prevents old, unrelated topics from incorrectly absorbing new articles.
+    # - 0: No timeframe limit (cluster with any existing topic)
+    # - 7-14 days: Recommended for security incidents (most follow-ups happen within this window)
+    # - 30+ days: More permissive, captures longer-running campaigns
+    CLUSTERING_TIMEFRAME_DAYS = int(os.getenv("CLUSTERING_TIMEFRAME_DAYS", "14"))
 
     # Trending topic threshold: minimum number of articles in a topic
     # for it to be marked as "trending" in the timeline.

@@ -140,6 +140,9 @@ def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
     """
     Cluster article into existing topics using semantic similarity.
     Loads embeddings from database instead of recalculating them.
+    
+    Only considers topics from the last N days (configurable via CLUSTERING_TIMEFRAME_DAYS)
+    to prevent old, unrelated topics from incorrectly absorbing new articles.
 
     Args:
         article_data: Article dict with 'title', 'content' keys
@@ -150,6 +153,8 @@ def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
         - If new topic: (True, None)
         - If added to existing: (False, topic_id)
     """
+    from datetime import datetime, timedelta
+    
     try:
         model = get_embedding_model()
         if model is None:
@@ -158,6 +163,40 @@ def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
 
         # Get all existing topics with embeddings from database
         existing_topics = db.get_all_topics_with_embeddings(processed_only=False)
+        
+        # Filter topics by timeframe (only consider recent topics)
+        timeframe_days = Config.CLUSTERING_TIMEFRAME_DAYS
+        if timeframe_days > 0:
+            cutoff_date = datetime.now() - timedelta(days=timeframe_days)
+            original_count = len(existing_topics)
+            
+            filtered_topics = []
+            for topic in existing_topics:
+                created_at = topic.get('created_at')
+                if created_at:
+                    # Parse the timestamp
+                    if isinstance(created_at, str):
+                        # Handle various timestamp formats
+                        try:
+                            topic_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            # Remove timezone info for comparison
+                            topic_date = topic_date.replace(tzinfo=None)
+                        except (ValueError, AttributeError):
+                            # If parsing fails, include the topic to be safe
+                            filtered_topics.append(topic)
+                            continue
+                    else:
+                        topic_date = created_at
+                    
+                    if topic_date >= cutoff_date:
+                        filtered_topics.append(topic)
+            
+            existing_topics = filtered_topics
+            logger.debug(
+                f"Timeframe filtering: {len(existing_topics)}/{original_count} topics "
+                f"from last {timeframe_days} days"
+            )
+        
         logger.debug(f"Loaded {len(existing_topics)} topics from database")
 
         # Perform clustering

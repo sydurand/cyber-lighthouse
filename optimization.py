@@ -40,7 +40,7 @@ def _cosine_similarity(vec1, vec2) -> float:
     return float(dot_product / (norm1 * norm2))
 
 
-def detect_similar_articles(article: dict, existing_articles: list, similarity_threshold: float = 0.65) -> bool:
+def detect_similar_articles(article: dict, existing_articles: list, similarity_threshold: float = 0.60) -> bool:
     """
     Detect if article is too similar to existing ones.
 
@@ -51,7 +51,7 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
         article: Article to check
         existing_articles: List of existing articles
         similarity_threshold: Similarity score threshold (0-1)
-                            Default 0.65: Balanced clustering for cybersecurity articles
+                            Default 0.60: Balanced clustering for cybersecurity articles
 
     Returns:
         True if similar article found, False otherwise
@@ -67,7 +67,7 @@ def detect_similar_articles(article: dict, existing_articles: list, similarity_t
             def _make_text(a):
                 """Build text from title + content for embedding."""
                 title = a.get("title", "")
-                content = a.get("content", "")[:300]
+                content = a.get("content", "")[:400]  # Increased from 300 to capture more context
                 return f"{title}. {content}" if content else title
 
             texts = [_make_text(article)] + [_make_text(e) for e in existing_articles]
@@ -194,7 +194,7 @@ def should_analyze_article(article: dict, analyzed_articles: list) -> bool:
         return False
 
     # Check for similarity
-    if detect_similar_articles(article, analyzed_articles, similarity_threshold=0.65):
+    if detect_similar_articles(article, analyzed_articles, similarity_threshold=0.60):
         logger.debug(f"Article too similar (skipped): {article['title'][:50]}...")
         return False
 
