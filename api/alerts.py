@@ -1,6 +1,7 @@
 """Alert-related API routes."""
 from typing import Optional
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query, HTTPException
 import hashlib
 import sqlite3
@@ -321,14 +322,21 @@ async def reanalyze_alert(alert_id: int) -> dict:
 
         logger.info(f"Manual re-analysis requested for alert {alert_id}: {title[:50]}...")
 
-        # Call AI analysis (this will update cache automatically)
-        new_analysis = analyze_article_with_ai(title, content)
+        # Run blocking AI analysis in thread pool to avoid blocking the event loop
+        import asyncio
+        loop = asyncio.get_running_loop()
+        executor = ThreadPoolExecutor(max_workers=1)
+        new_analysis = await loop.run_in_executor(
+            executor,
+            lambda: analyze_article_with_ai(title, content)
+        )
+        executor.shutdown(wait=False)
 
-        # Check if analysis actually succeeded (not a fallback message)
-        if new_analysis.startswith("⏳") or new_analysis.startswith("Analysis unavailable"):
+        # Check if analysis actually succeeded
+        if not new_analysis or new_analysis.startswith("⏳") or new_analysis.startswith("Analysis unavailable"):
             raise HTTPException(
                 status_code=502,
-                detail=f"AI analysis failed: {new_analysis[:100]}"
+                detail="AI analysis failed — service may be unavailable or rate limited"
             )
 
         # Update analysis in database
