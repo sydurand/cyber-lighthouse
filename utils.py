@@ -1347,7 +1347,24 @@ def fetch_full_article_content(url: str, rss_content: str, timeout: int = 30) ->
             return rss_content
 
         logger.debug(f"Fetching full article from {url[:60]}...")
-        extracted = trafilatura.fetch_url(url, include_comments=False, timeout=timeout)
+
+        # Fetch with a legitimate user agent — many sites block default/missing UA
+        import requests
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
+        response = requests.get(url, headers=headers, timeout=timeout)
+        response.raise_for_status()
+
+        extracted = trafilatura.extract(
+            response.text, include_comments=False
+        )
 
         if extracted:
             logger.debug(f"Successfully extracted {len(extracted)} chars from article")
