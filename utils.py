@@ -3,6 +3,7 @@ import os
 import time
 import hashlib
 import threading
+import requests
 from functools import wraps
 from logging_config import logger
 from config import Config
@@ -1349,7 +1350,6 @@ def fetch_full_article_content(url: str, rss_content: str, timeout: int = 30) ->
         logger.debug(f"Fetching full article from {url[:60]}...")
 
         # Fetch with a legitimate user agent — many sites block default/missing UA
-        import requests
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
