@@ -46,10 +46,12 @@ def fetch_rss_feed(source: str, url: str) -> list:
     try:
         feed = feedparser.parse(url)
         # Suppress harmless bozo warnings — HTML content-type feeds parse fine,
-        # and minor XML quirks don't prevent successful parsing.
-        if feed.bozo and not str(feed.bozo_exception).startswith(
+        # minor XML quirks don't prevent successful parsing, and encoding
+        # mismatches (us-ascii vs utf-8) are common and handled correctly.
+        bozo_msg = str(feed.bozo_exception)
+        if feed.bozo and not bozo_msg.startswith(
             ('<unknown>', 'text/html', 'content type')
-        ):
+        ) and 'parsed as utf-8' not in bozo_msg:
             logger.warning(f"Feed parsing issue for {source}: {feed.bozo_exception}")
         return feed.entries if hasattr(feed, 'entries') else []
     except Exception as e:
@@ -132,21 +134,22 @@ Be concise but informative. Each line should be a complete sentence."""
         # Check for common error types and provide appropriate message
         if '404' in error_str or 'not found' in error_str:
             return (
-                f"⏳ Analysis pending\n\n"
-                f"AI service temporarily unavailable. Article queued for processing.\n\n"
+                f"⏳ **Analysis failed**\n\n"
+                f"AI model not found. Check `OLLAMA_MODEL` setting.\n\n"
                 f"**Title**: {title}\n"
+                f"**Error**: {e}\n"
                 f"**Content preview**: {content[:200]}..."
             )
         elif 'timeout' in error_str or 'connection' in error_str:
             return (
-                f"⏳ Analysis delayed\n\n"
+                f"⏳ **Analysis delayed**\n\n"
                 f"AI service connection timeout. Will retry shortly.\n\n"
                 f"**Title**: {title}\n"
                 f"**Content preview**: {content[:200]}..."
             )
         elif 'rate limit' in error_str:
             return (
-                f"⏳ Rate limited\n\n"
+                f"⏳ **Analysis rate limited**\n\n"
                 f"AI service quota exceeded. Analysis will resume when quota resets.\n\n"
                 f"**Title**: {title}\n"
                 f"**Content preview**: {content[:200]}..."
@@ -155,9 +158,10 @@ Be concise but informative. Each line should be a complete sentence."""
             # Generic fallback with article content
             content_preview = f"\n\n**Content preview**: {content[:300]}..." if content else ""
             return (
-                f"⏳ Analysis pending\n\n"
-                f"Article content is being processed. Analysis will be available shortly.\n\n"
-                f"**Title**: {title}{content_preview}"
+                f"⏳ **Analysis failed**\n\n"
+                f"AI analysis error. Check logs for details.\n\n"
+                f"**Title**: {title}\n"
+                f"**Error**: {e}{content_preview}"
             )
 
 

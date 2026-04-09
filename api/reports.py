@@ -42,6 +42,38 @@ async def get_reports(
                 report_id=report.get("cache_key", ""),
             ))
 
+        # Fallback: scan reports/ directory for archived reports not in cache
+        if len(reports) < limit:
+            import os, re as _re
+            reports_dir = os.path.join(os.path.dirname(__file__), "..", "reports")
+            if os.path.isdir(reports_dir):
+                cached_dates = {r.generated_date for r in reports}
+                for filename in sorted(os.listdir(reports_dir), reverse=True):
+                    if not filename.startswith("summary_") or not filename.endswith(".md"):
+                        continue
+                    # Extract date from filename: summary_YYYY-MM-DD.md
+                    date_match = _re.match(r"summary_(\d{4}-\d{2}-\d{2})\.md", filename)
+                    if not date_match:
+                        continue
+                    report_date = date_match.group(1)
+                    if report_date in cached_dates:
+                        continue
+                    try:
+                        filepath = os.path.join(reports_dir, filename)
+                        with open(filepath, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        reports.append(ReportResponse(
+                            report_content=content,
+                            articles_count=0,
+                            generated_date=report_date,
+                            report_id=f"file:{filename}",
+                        ))
+                        cached_dates.add(report_date)
+                        if len(reports) >= limit:
+                            break
+                    except Exception as e:
+                        logger.warning(f"Failed to read report file {filename}: {e}")
+
         return ReportsListResponse(reports=reports, total_count=len(reports))
 
     except Exception as e:
