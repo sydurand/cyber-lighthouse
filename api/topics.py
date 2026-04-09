@@ -44,3 +44,110 @@ async def get_topics(
     except Exception as e:
         logger.error(f"Error fetching topics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/topics/recluster")
+async def recluster_articles() -> JSONResponse:
+    """
+    Re-run article clustering on all unclustered articles.
+
+    This is useful when:
+    - Clustering failed due to AI service being down
+    - New articles were added but not clustered
+    - You want to re-organize existing topics
+
+    Returns statistics about the re-clustering operation.
+    """
+    from real_time import cluster_article_into_topics
+    from config import Config
+    import time
+
+    try:
+        start_time = time.time()
+
+        # Get all articles
+        all_articles = db.get_all_articles()
+        logger.info(f"Re-clustering: {len(all_articles)} articles to process")
+
+        # Get articles that are NOT yet linked to any topic
+        all_topics = db.get_all_topics_with_embeddings(processed_only=False)
+        clustered_article_ids = set()
+        for topic in all_topics:
+            topic_articles = db.get_topic_linked_articles(topic["id"])
+            for a in topic_articles:
+                clustered_article_ids.add(a.get("id"))
+
+        unclustered = [a for a in all_articles if a.get("id") not in clustered_article_ids]
+        logger.info(f"Found {len(unclustered)} unclustered articles")
+
+        stats = {
+            "total_articles": len(all_articles),
+            "already_clustered": len(clustered_article_ids),
+            "unclustered": len(unclustered),
+            "new_topics_created": 0,
+            "articles_clustered": 0,
+            "errors": 0,
+        }
+
+        for article in unclustered:
+            try:
+                article_data = {
+                    "title": article.get("title", ""),
+                    "content": article.get("content", "")[:450],
+                    "date": article.get("date", ""),
+                }
+
+                is_new, topic_id = cluster_article_into_topics(article_data, db)
+
+                if is_new:
+                    # Create new topic
+                    model = None
+                    try:
+                        from utils import get_embedding_model
+                        model = get_embedding_model()
+                    except Exception:
+                        pass
+
+                    topic_embedding_bytes = None
+                    if model is not None:
+                        try:
+                            import numpy as np
+                            topic_text = f"{article_data['title']} {article_data['content']}"
+                            embedding = model.encode([topic_text], show_progress_bar=False)[0]
+                            topic_embedding_bytes = embedding.tobytes()
+                        except Exception as e:
+                            logger.warning(f"Failed to generate embedding: {e}")
+
+                    new_topic_id = db.create_topic(article_data["title"], embedding=topic_embedding_bytes)
+                    if new_topic_id:
+                        db.add_article_to_topic(article.get("id"), new_topic_id)
+                        stats["new_topics_created"] += 1
+                        stats["articles_clustered"] += 1
+                        logger.debug(f"New topic created: #{new_topic_id} '{article_data['title'][:50]}...'")
+                else:
+                    # Add to existing topic
+                    db.add_article_to_topic(article.get("id"), topic_id)
+                    stats["articles_clustered"] += 1
+                    logger.debug(f"Article added to topic #{topic_id}")
+
+            except Exception as e:
+                stats["errors"] += 1
+                logger.warning(f"Error clustering article #{article.get('id')}: {e}")
+
+        elapsed = time.time() - start_time
+        stats["elapsed_seconds"] = round(elapsed, 2)
+
+        logger.info(
+            f"Re-clustering complete: {stats['articles_clustered']} articles clustered, "
+            f"{stats['new_topics_created']} new topics created in {elapsed:.1f}s"
+        )
+
+        return JSONResponse(content={
+            "message": "Re-clustering completed",
+            "stats": stats,
+        })
+
+    except Exception as e:
+        logger.error(f"Error during re-clustering: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Re-clustering failed: {str(e)}")
+
