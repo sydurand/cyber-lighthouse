@@ -1,0 +1,13 @@
+tree eb6b45a3a0fce8e406a9336c35949e0632272909
+parent 1705f93069725e652bf72dd74b1f3ad7df676041
+author Sylvain <sylvain.durand@gmail.com> 1775593587 +0200
+committer Sylvain <sylvain.durand@gmail.com> 1775593587 +0200
+
+Remove bookmark functionality
+
+Completely remove bookmark management feature from the application:
+- Backend: Remove BookmarkResponse and BookmarkToggle models, bookmark endpoints (GET, POST, DELETE), and in-memory storage
+- Frontend: Remove bookmark tab, bookmark buttons on alert cards, bookmark state and API methods
+- Documentation: Update README to remove bookmark endpoint references
+
+Co-authored-by: Qwen-Coder <qwen-coder@alibabacloud.com>

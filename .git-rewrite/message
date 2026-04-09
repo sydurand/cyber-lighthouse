@@ -1,0 +1,18 @@
+Improve article clustering to group semantically similar articles
+
+Fix issue where articles about the same topic (e.g., Iranian hackers targeting
+critical infrastructure) were not being clustered together.
+
+Changes:
+- Lower semantic similarity threshold from 0.8 to 0.65 in optimization.py
+  (more aggressive clustering for cybersecurity articles)
+- Improve AI deduplication prompt to use title + analysis snippets instead of
+  just titles, enabling better semantic understanding
+- Simplify frontend dedup to preserve backend topic clustering while removing
+  exact duplicates (first 80 chars match)
+- Add AI verification for uncertain similarity cases (0.45-0.65 range)
+
+Tested with Iranian hacker articles from BleepingComputer and DataBreaches.net
+- Now correctly clustered together (semantic similarity > 0.65)
+- Unrelated articles correctly kept separate
+
