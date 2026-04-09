@@ -60,6 +60,10 @@ const app = createApp({
     // Re-analysis loading state (Set of alert IDs currently being re-analyzed)
     const reanalyzingAlerts = ref(new Set());
 
+    // Re-clustering state
+    const reclusteringTopics = ref(false);
+    const reclusterStats = ref(null);
+
     // Settings state
     const rssFeeds = ref([]);
     const showAddFeedForm = ref(false);
@@ -469,6 +473,33 @@ const app = createApp({
 
     const isReanalyzing = (alertId) => {
       return reanalyzingAlerts.value.has(alertId);
+    };
+
+    // ==================== Topic Re-clustering ====================
+
+    const reclusterTopics = async () => {
+      if (reclusteringTopics.value) return;
+
+      reclusteringTopics.value = true;
+      reclusterStats.value = null;
+
+      try {
+        const result = await apiClient.reclusterTopics();
+        reclusterStats.value = result.stats || {};
+        showToast(
+          `Re-clustering complete: ${result.stats.articles_clustered || 0} articles clustered, ${result.stats.new_topics_created || 0} new topics`,
+          "success",
+          8000
+        );
+        // Reload alerts to show updated topics
+        loadAlerts();
+      } catch (error) {
+        console.error("Re-clustering failed:", error);
+        const errorMsg = error.response?.data?.detail || error.message || "Unknown error";
+        showToast(`Re-clustering failed: ${errorMsg}`, "error", 5000);
+      } finally {
+        reclusteringTopics.value = false;
+      }
     };
 
     const downloadFile = (content, filename, mimeType) => {
@@ -961,6 +992,9 @@ const app = createApp({
       reanalyzeAlert,
       isReanalyzing,
       reanalyzingAlerts,
+      reclusterTopics,
+      reclusteringTopics,
+      reclusterStats,
       rssFeeds,
       showAddFeedForm,
       newFeed,

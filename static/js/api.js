@@ -91,6 +91,13 @@ class APIClient {
   }
 
   /**
+   * Re-cluster all unclustered articles
+   */
+  async reclusterTopics() {
+    return this.fetch("/topics/recluster", { method: "POST" });
+  }
+
+  /**
    * Get all RSS feeds
    */
   async getRssFeeds() {
