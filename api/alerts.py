@@ -328,7 +328,7 @@ async def reanalyze_alert(alert_id: int) -> dict:
         executor = ThreadPoolExecutor(max_workers=1)
         new_analysis = await loop.run_in_executor(
             executor,
-            lambda: analyze_article_with_ai(title, content)
+            lambda: analyze_article_with_ai(title, content, force_refresh=True)
         )
         executor.shutdown(wait=False)
 

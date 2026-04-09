@@ -3,19 +3,13 @@ import pytest
 import sys
 from unittest.mock import patch, MagicMock
 
-# Mock optional dependencies before importing utils
-mock_trafilatura = MagicMock()
-sys.modules['trafilatura'] = mock_trafilatura
-sys.modules['sentence_transformers'] = MagicMock()
-
-from utils import fetch_full_article_content
-
 
 class TestArticleScraping:
     """Test web content scraping with trafilatura."""
 
     def test_fetch_full_article_content_sufficient_rss(self, mock_config):
         """Test that sufficient RSS content is not scraped."""
+        from utils import fetch_full_article_content
         rss_content = "x" * 500  # Sufficient length (> 300 chars)
         url = "https://example.com/article"
 
@@ -27,6 +21,7 @@ class TestArticleScraping:
 
     def test_fetch_full_article_content_short_rss(self, mock_config):
         """Test that short RSS content is scraped."""
+        from utils import fetch_full_article_content
         rss_content = "Short content"  # < 300 chars
         url = "https://example.com/article"
         scraped_content = "Full article content extracted by trafilatura"
@@ -34,12 +29,14 @@ class TestArticleScraping:
         mock_response = MagicMock()
         mock_response.text = scraped_content
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = scraped_content
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = scraped_content
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response) as mock_get:
-                    result = fetch_full_article_content(url, rss_content)
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        result = fetch_full_article_content(url, rss_content)
 
         assert result == scraped_content
         mock_get.assert_called_once()
@@ -48,12 +45,12 @@ class TestArticleScraping:
 
     def test_fetch_full_article_content_trafilatura_not_installed(self, mock_config):
         """Test fallback when trafilatura is not installed."""
+        from utils import fetch_full_article_content
         rss_content = "Short content"
         url = "https://example.com/article"
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
-                import sys
                 saved_modules = {}
                 if 'trafilatura' in sys.modules:
                     saved_modules['trafilatura'] = sys.modules.pop('trafilatura')
@@ -68,23 +65,27 @@ class TestArticleScraping:
 
     def test_fetch_full_article_content_extraction_fails(self, mock_config):
         """Test fallback when trafilatura extraction fails."""
+        from utils import fetch_full_article_content
         rss_content = "Short content"
         url = "https://example.com/article"
 
         mock_response = MagicMock()
         mock_response.text = "<html>...</html>"
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = None
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = None
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response):
-                    result = fetch_full_article_content(url, rss_content)
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        result = fetch_full_article_content(url, rss_content)
 
         assert result == rss_content
 
     def test_fetch_full_article_content_custom_timeout(self, mock_config):
         """Test using custom timeout."""
+        from utils import fetch_full_article_content
         rss_content = "Short"
         url = "https://example.com/article"
         scraped = "Scraped content"
@@ -93,18 +94,21 @@ class TestArticleScraping:
         mock_response = MagicMock()
         mock_response.text = scraped
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = scraped
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = scraped
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response) as mock_get:
-                    fetch_full_article_content(url, rss_content, timeout=custom_timeout)
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        fetch_full_article_content(url, rss_content, timeout=custom_timeout)
 
         mock_get.assert_called_once()
         assert mock_get.call_args.kwargs['timeout'] == custom_timeout
 
     def test_fetch_full_article_content_length_limit(self, mock_config):
         """Test that extracted content is limited to 5000 characters."""
+        from utils import fetch_full_article_content
         rss_content = "Short"
         url = "https://example.com/article"
         long_content = "x" * 10000
@@ -112,17 +116,20 @@ class TestArticleScraping:
         mock_response = MagicMock()
         mock_response.text = "<html>...</html>"
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = long_content
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = long_content
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response):
-                    result = fetch_full_article_content(url, rss_content)
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        result = fetch_full_article_content(url, rss_content)
 
         assert len(result) == 5000
 
     def test_fetch_full_article_content_exception_handling(self, mock_config):
         """Test exception handling during scraping."""
+        from utils import fetch_full_article_content
         rss_content = "Short content"
         url = "https://example.com/article"
 
@@ -135,6 +142,7 @@ class TestArticleScraping:
 
     def test_fetch_full_article_content_empty_rss(self, mock_config):
         """Test with empty RSS content."""
+        from utils import fetch_full_article_content
         rss_content = ""
         url = "https://example.com/article"
         scraped = "Scraped content"
@@ -142,12 +150,14 @@ class TestArticleScraping:
         mock_response = MagicMock()
         mock_response.text = scraped
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = scraped
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = scraped
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response):
-                    result = fetch_full_article_content(url, rss_content)
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        result = fetch_full_article_content(url, rss_content)
 
         assert result == scraped
 
@@ -176,6 +186,7 @@ class TestScrapingIntegration:
 
     def test_scraping_preserves_metadata(self, mock_config):
         """Test that scraping doesn't affect article metadata."""
+        from utils import fetch_full_article_content
         rss_content = "Short"
         url = "https://example.com/article"
         scraped = "Full content"
@@ -183,16 +194,19 @@ class TestScrapingIntegration:
         mock_response = MagicMock()
         mock_response.text = scraped
         mock_response.raise_for_status = MagicMock()
-        mock_trafilatura.extract.return_value = scraped
+        mock_tf = MagicMock()
+        mock_tf.extract.return_value = scraped
 
         with patch('utils.Config', mock_config):
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response):
-                    result = fetch_full_article_content(url, rss_content)
-                    assert url == url
+                    with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                        result = fetch_full_article_content(url, rss_content)
+                        assert url == url
 
     def test_scraping_multiple_articles(self, mock_config):
         """Test scraping multiple articles."""
+        from utils import fetch_full_article_content
         articles = [
             ("https://example.com/1", "Short1", "Full1"),
             ("https://example.com/2", "Short2", "Full2"),
@@ -206,7 +220,9 @@ class TestScrapingIntegration:
             with patch('utils.logger'):
                 with patch('utils.requests.get', return_value=mock_response):
                     for url, rss, expected_full in articles:
-                        mock_trafilatura.extract.return_value = expected_full
+                        mock_tf = MagicMock()
+                        mock_tf.extract.return_value = expected_full
                         mock_response.text = expected_full
-                        result = fetch_full_article_content(url, rss)
+                        with patch.dict(sys.modules, {'trafilatura': mock_tf}):
+                            result = fetch_full_article_content(url, rss)
                         assert result == expected_full

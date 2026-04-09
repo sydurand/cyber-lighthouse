@@ -61,28 +61,31 @@ def fetch_rss_feed(source: str, url: str) -> list:
 
 
 @retry_with_backoff
-def analyze_article_with_ai(title: str, content: str) -> str:
+def analyze_article_with_ai(title: str, content: str, force_refresh: bool = False) -> str:
     """
     Perform rapid AI analysis of a security article.
 
     Uses the configured AI provider to generate a quick SOC-level alert analysis.
-    Checks cache first to reduce API calls.
+    Checks cache first to reduce API calls (unless force_refresh=True).
     Automatically highlights CVE identifiers in the analysis.
 
     Args:
         title: Article title
         content: Article content
+        force_refresh: Skip cache and force fresh AI analysis
 
     Returns:
-        Analysis text from AI provider with CVEs highlighted (cached or fresh)
+        Analysis text from AI provider with CVEs highlighted (cached or fresh),
+        or None if rate limited or AI error.
     """
-    # Check cache first
-    cached_response = cache.get_analysis(title, content)
-    if cached_response:
-        logger.info(f"✓ Using cached analysis (saved 1 API call)")
-        # Highlight CVEs in cached response
-        from utils import highlight_cves_in_text
-        return highlight_cves_in_text(cached_response)
+    # Check cache first (skip on force_refresh)
+    if not force_refresh:
+        cached_response = cache.get_analysis(title, content)
+        if cached_response:
+            logger.info(f"✓ Using cached analysis (saved 1 API call)")
+            # Highlight CVEs in cached response
+            from utils import highlight_cves_in_text
+            return highlight_cves_in_text(cached_response)
 
     # Check rate limit — return None so caller skips analysis storage
     if not call_counter.can_make_call():
