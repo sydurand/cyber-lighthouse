@@ -84,10 +84,10 @@ def analyze_article_with_ai(title: str, content: str) -> str:
         from utils import highlight_cves_in_text
         return highlight_cves_in_text(cached_response)
 
-    # Check rate limit
+    # Check rate limit — return None so caller skips analysis storage
     if not call_counter.can_make_call():
         logger.warning(f"Rate limit approaching ({call_counter.get_remaining_quota()} calls left)")
-        return "Analysis unavailable: Rate limit approaching. Try again in a few minutes."
+        return None
 
     prompt = f"Title: {title}\nContent: {content}"
 
@@ -128,42 +128,9 @@ Be concise but informative. Each line should be a complete sentence."""
         return response_text
     except Exception as e:
         logger.error(f"AI analysis failed for '{title[:50]}...': {e}")
-        
-        # Return user-friendly fallback instead of raw error
-        error_str = str(e).lower()
-        
-        # Check for common error types and provide appropriate message
-        if '404' in error_str or 'not found' in error_str:
-            return (
-                f"⏳ **Analysis failed**\n\n"
-                f"AI model not found. Check `OLLAMA_MODEL` setting.\n\n"
-                f"**Title**: {title}\n"
-                f"**Error**: {e}\n"
-                f"**Content preview**: {content[:200]}..."
-            )
-        elif 'timeout' in error_str or 'connection' in error_str:
-            return (
-                f"⏳ **Analysis delayed**\n\n"
-                f"AI service connection timeout. Will retry shortly.\n\n"
-                f"**Title**: {title}\n"
-                f"**Content preview**: {content[:200]}..."
-            )
-        elif 'rate limit' in error_str:
-            return (
-                f"⏳ **Analysis rate limited**\n\n"
-                f"AI service quota exceeded. Analysis will resume when quota resets.\n\n"
-                f"**Title**: {title}\n"
-                f"**Content preview**: {content[:200]}..."
-            )
-        else:
-            # Generic fallback with article content
-            content_preview = f"\n\n**Content preview**: {content[:300]}..." if content else ""
-            return (
-                f"⏳ **Analysis failed**\n\n"
-                f"AI analysis error. Check logs for details.\n\n"
-                f"**Title**: {title}\n"
-                f"**Error**: {e}{content_preview}"
-            )
+        # Return None so caller skips analysis storage — article will show
+        # as pending and can be re-analyzed later when the issue is resolved
+        return None
 
 
 def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
@@ -409,6 +376,8 @@ def process_new_articles():
                     else:
                         # Analyze with AI (with rate limit check)
                         analysis = analyze_article_with_ai(article.title, content)
+                        if analysis is None:
+                            logger.warning(f"Rate limited — {title} stored without analysis")
 
                 logger.info(f"\n{analysis}")
                 logger.info("-" * 60)
@@ -423,8 +392,9 @@ def process_new_articles():
                     link=article.link,
                     date=datetime.now().strftime("%Y-%m-%d")
                 ):
-                    # Store analysis in database
-                    db.set_article_analysis(article.link, analysis)
+                    # Store analysis in database (skip if rate limited)
+                    if analysis:
+                        db.set_article_analysis(article.link, analysis)
                     # Get the article ID for clustering
                     try:
                         import sqlite3
