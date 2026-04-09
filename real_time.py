@@ -48,11 +48,12 @@ def fetch_rss_feed(source: str, url: str) -> list:
         # Suppress harmless bozo warnings — HTML content-type feeds parse fine,
         # minor XML quirks don't prevent successful parsing, and encoding
         # mismatches (us-ascii vs utf-8) are common and handled correctly.
-        bozo_msg = str(feed.bozo_exception)
+        bozo_exception = getattr(feed, 'bozo_exception', None)
+        bozo_msg = str(bozo_exception) if bozo_exception else ''
         if feed.bozo and not bozo_msg.startswith(
             ('<unknown>', 'text/html', 'content type')
         ) and 'parsed as utf-8' not in bozo_msg:
-            logger.warning(f"Feed parsing issue for {source}: {feed.bozo_exception}")
+            logger.warning(f"Feed parsing issue for {source}: {bozo_exception}")
         return feed.entries if hasattr(feed, 'entries') else []
     except Exception as e:
         logger.error(f"Failed to fetch {source}: {e}")
