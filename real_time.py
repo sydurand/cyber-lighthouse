@@ -9,9 +9,7 @@ from database import Database
 from cache import get_cache
 from ai_client import get_ai_client
 from optimization import (
-    should_analyze_article,
     detect_similar_articles,
-    estimate_api_calls,
     optimize_for_rate_limit,
     get_call_counter
 )

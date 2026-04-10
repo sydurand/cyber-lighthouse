@@ -20,16 +20,10 @@ const app = createApp({
     const filterSource = ref("");
     const filterTag = ref("");
     const filterSeverity = ref("");
-    const alertsOffset = ref(0);
     const alertsLimit = ref(20);
     const alertsPage = ref(1);
     const alertsTotalCount = ref(0);
-    const hasMoreAlerts = ref(true);
-    const filterStats = ref(null);
     const trendingTags = ref({});
-    const lastRefreshTime = ref(null);
-    const newAlertsCount = ref(0);
-    const previousAlertCount = ref(0);
     const toastMessages = ref([]);
 
     // History pagination
@@ -41,7 +35,6 @@ const app = createApp({
 
     // Reports
     const expandedReports = ref(new Set());
-    const reportsWithTOC = ref({});
 
     // Alerts collapse
     const expandedAlerts = ref(new Set());
@@ -68,7 +61,6 @@ const app = createApp({
     const rssFeeds = ref([]);
     const showAddFeedForm = ref(false);
     const newFeed = ref({ name: "", url: "" });
-    const editingFeedIndex = ref(-1);
 
     // Charts
     let chartBySource = null;
@@ -161,10 +153,6 @@ const app = createApp({
         alert.severity === filterSeverity.value
       );
     });
-
-    const getFilteredCount = (severity) => {
-      return alerts.value.filter(alert => alert.severity === severity).length;
-    };
 
     const getSeverityCount = (severity) => {
       return alerts.value.filter(alert => alert.severity === severity).length;
@@ -305,13 +293,6 @@ const app = createApp({
         alerts.value = deduplicateAlerts(rawAlerts);
         alertsTotalCount.value = alertsData.total_count || 0;
 
-        // Check for new alerts
-        if (previousAlertCount.value > 0 && rawAlerts.length > previousAlertCount.value) {
-          newAlertsCount.value = rawAlerts.length - previousAlertCount.value;
-        }
-        previousAlertCount.value = rawAlerts.length;
-
-        filterStats.value = alertsData.filter_stats || null;
         trendingTags.value = alertsData.filter_stats?.trending_tags || {};
 
         reports.value = reportsData.reports || [];
@@ -320,7 +301,6 @@ const app = createApp({
         allArticles.value = articlesData.articles || [];
         historyTotalCount.value = articlesData.total_count || 0;
 
-        lastRefreshTime.value = new Date();
         updateCharts();
 
         if (!isAutoRefresh) {
@@ -584,7 +564,6 @@ const app = createApp({
         showToast(`Feed '${newFeed.value.name}' added`, "success");
         showAddFeedForm.value = false;
         newFeed.value = { name: "", url: "" };
-        editingFeedIndex.value = -1;
         await loadFeeds();
       } catch (error) {
         showToast(`Failed to add feed: ${error.message}`, "error");
@@ -611,7 +590,6 @@ const app = createApp({
     const editFeed = (index) => {
       const feed = rssFeeds.value[index];
       newFeed.value = { name: feed.name, url: feed.url };
-      editingFeedIndex.value = index;
       showAddFeedForm.value = true;
     };
 
@@ -642,10 +620,6 @@ const app = createApp({
       if (currentTab.value !== "alerts") {
         currentTab.value = "alerts";
       }
-    };
-
-    const clearNotificationBadge = () => {
-      newAlertsCount.value = 0;
     };
 
     const updateCharts = () => {
@@ -938,33 +912,14 @@ const app = createApp({
       return div.innerHTML;
     };
 
-    const formatTimestamp = (timestamp) => {
-      if (!timestamp) return "Never";
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString();
-    };
-
-    const generateReportAnchors = (content) => {
-      return content.replace(/^(#{1,6})\s+(.+)$/gm, (match, hashes, text) => {
-        const level = hashes.length;
-        const cleanText = text.replace(/[^\w\s-]/g, '').trim();
-        const anchor = cleanText.toLowerCase().replace(/\s+/g, '-');
-        return `<h${level} id="${anchor}">${text}</h${level}>`;
-      });
-    };
-
     // Watchers
-    watch(alertsOffset, () => {
-      refreshData();
-    });
-
     watch(filterTag, () => {
       historyPage.value = 1;
     });
 
     watch(filterSeverity, () => {
-      // Reset to show first page when filter changes
-      alertsOffset.value = 0;
+      // Reset to first page when filter changes
+      alertsPage.value = 1;
     });
 
     // Lifecycle
@@ -981,9 +936,6 @@ const app = createApp({
 
       // Poll task status every 60s
       setInterval(() => fetchTaskStatus(), 60000);
-
-      // Expose filterByTag globally for onclick handlers in rendered HTML
-      window.filterByTag = filterByTag;
     });
 
     return {
@@ -999,16 +951,12 @@ const app = createApp({
       filterSource,
       filterTag,
       filterSeverity,
-      alertsOffset,
       alertsPage,
       alertsTotalCount,
       alertsTotalPages,
       alertsPageStart,
       alertsPageEnd,
-      filterStats,
       trendingTags,
-      lastRefreshTime,
-      newAlertsCount,
       toastMessages,
       historyPage,
       historyPageSize,
@@ -1016,7 +964,6 @@ const app = createApp({
       historyDateTo,
       historyTotalCount,
       expandedReports,
-      reportsWithTOC,
       expandedAlerts,
       collapseOldAlerts,
       showExportMenu,
@@ -1030,7 +977,6 @@ const app = createApp({
       alertsCount,
       reportsCount,
       filteredAlerts,
-      hasMoreAlerts,
       refreshData,
       fetchTaskStatus,
       triggerTask,
@@ -1059,17 +1005,13 @@ const app = createApp({
       deleteFeed,
       filterByTag,
       filterBySeverity,
-      clearNotificationBadge,
       updateCharts,
       renderMarkdown,
       renderReport,
       renderAlertAnalysis,
-      formatTimestamp,
       formatUptime,
-      generateReportAnchors,
       getSeverityColor,
       getSeverityIcon,
-      getFilteredCount,
       getSeverityCount,
       getSeverityPercentage,
       getThreatLevel,

@@ -1,6 +1,5 @@
 """Export and utility functions for Cyber-Lighthouse."""
 import re
-import hashlib
 import csv
 import io
 from typing import List, Dict, Any

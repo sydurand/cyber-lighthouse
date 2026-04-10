@@ -46,13 +46,6 @@ class APIClient {
   }
 
   /**
-   * Get report with table of contents
-   */
-  async getReportWithTOC(index) {
-    return this.fetch(`/reports/${index}/toc`);
-  }
-
-  /**
    * Get statistics
    */
   async getStatistics() {
@@ -141,16 +134,6 @@ class APIClient {
   }
 
   /**
-   * Update all RSS feeds (bulk)
-   */
-  async updateRssFeeds(feeds) {
-    return this.fetch("/settings/feeds", {
-      method: "PUT",
-      body: JSON.stringify({ feeds }),
-    });
-  }
-
-  /**
    * Export alerts
    */
   async exportAlerts(format = "markdown", limit = 100) {
@@ -162,15 +145,6 @@ class APIClient {
    */
   async exportReport(index, format = "markdown") {
     return this.fetch(`/export/report/${index}?format=${format}`);
-  }
-
-  /**
-   * Health check
-   */
-  async healthCheck() {
-    return this.fetch("/health", { method: "GET" }).catch(() => {
-      return { status: "offline" };
-    });
   }
 
   /**
