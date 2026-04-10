@@ -56,18 +56,21 @@ def detect_severity_with_ai(analysis: str, title: str = "", tags: List[str] = No
         # Confirm with additional context (not just the word "critical" used casually)
         critical_context = ['active exploitation', 'zero-day', '0-day', 'nation-state',
                           'widespread', 'in the wild', 'no patch', 'unpatched',
-                          'immediate action', 'urgent', 'actively exploited']
+                          'immediate action', 'urgent', 'actively exploited',
+                          'state-sponsored', 'critical infrastructure']
         if any(kw in text for kw in critical_context):
             return 'critical'
         # Single critical mention with high-severity tags
         if any(tag in tags_lower for tag in ['#apt', '#nationstate', '#zeroday']):
             return 'critical'
 
-    # Explicit HIGH mentions
+    # Explicit HIGH mentions — but NOT "high potential", "highly", etc.
     high_patterns = [
-        r'high\s*(?:severity|vulnerability|risk|threat|impact|priority)?',
+        r'high\s*(?:severity|vulnerability|risk|threat|impact|priority)',
         r'severity[:\s]*high',
         r'cvss[\s:]*(?:[78]\.\d*)',
+        # Also match "(High)" or "(High Severity)" patterns
+        r'\(high(?:\s+severity)?\)',
     ]
     if any(re.search(p, text) for p in high_patterns):
         return 'high'
