@@ -22,8 +22,8 @@ def compute_article_hash(title: str, content: str) -> str:
 def _get_embedding_model():
     """Get embedding model instance (delegated to utils.py for shared caching)."""
     # Import lazily to avoid circular import
-    from utils import _get_embedding_model as _utils_get_model
-    return _utils_get_model()
+    from utils import get_embedding_model
+    return get_embedding_model()
 
 
 def _cosine_similarity(vec1, vec2) -> float:

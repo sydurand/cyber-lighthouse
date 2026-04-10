@@ -105,7 +105,7 @@ def reset_embedding_model_state():
     
     # Reset embedding model and caches
     utils._embedding_model = None
-    utils._clustering_ai_cache.clear()
+    utils._embedding_model_load_failed = False
     utils._relevance_cache.clear()
     utils._tag_cache.clear()
     
