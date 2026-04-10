@@ -492,7 +492,7 @@ const app = createApp({
           8000
         );
         // Reload alerts to show updated topics
-        loadAlerts();
+        await refreshData();
       } catch (error) {
         console.error("Re-clustering failed:", error);
         const errorMsg = error.response?.data?.detail || error.message || "Unknown error";
