@@ -828,8 +828,20 @@
               </div>
 
               <p class="text-sm text-slate-300 mb-3">
-                Re-run semantic clustering on all unclustered articles. Useful when clustering failed or new articles were added.
+                Re-run semantic clustering on all articles from scratch. This deletes all existing topics and re-groups articles.
               </p>
+
+              <!-- Progress Bar -->
+              <div v-if="reclusterProgress && reclusterProgress.active" class="mt-4">
+                <div class="flex justify-between items-center mb-1">
+                  <span class="text-sm font-medium text-purple-300">{{ getProgressLabel() }}</span>
+                  <span class="text-sm font-bold text-purple-400">{{ getProgressPercent() }}%</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+                  <div class="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full transition-all duration-300 ease-out"
+                       :style="{ width: getProgressPercent() + '%' }"></div>
+                </div>
+              </div>
 
               <!-- Re-cluster Stats -->
               <div v-if="reclusterStats" class="mt-4 p-4 bg-slate-900/50 border border-slate-700 rounded-lg">

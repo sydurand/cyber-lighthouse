@@ -477,11 +477,61 @@ const app = createApp({
 
     // ==================== Topic Re-clustering ====================
 
+    const reclusterProgress = ref(null); // { active, phase, current, total, stats }
+    let progressPollInterval = null;
+
+    const startProgressPolling = () => {
+      reclusterProgress.value = { active: true, phase: "starting", current: 0, total: 0 };
+
+      progressPollInterval = setInterval(async () => {
+        try {
+          const progress = await apiClient.getReclusterProgress();
+          reclusterProgress.value = progress;
+
+          if (!progress.active && progress.phase === "done") {
+            clearInterval(progressPollInterval);
+            progressPollInterval = null;
+          }
+        } catch (e) {
+          console.error("Failed to fetch progress:", e);
+        }
+      }, 500); // Poll every 500ms
+    };
+
+    const stopProgressPolling = () => {
+      if (progressPollInterval) {
+        clearInterval(progressPollInterval);
+        progressPollInterval = null;
+      }
+    };
+
+    const getProgressPercent = () => {
+      if (!reclusterProgress.value) return 0;
+      const { current, total } = reclusterProgress.value;
+      return total > 0 ? Math.round((current / total) * 100) : 0;
+    };
+
+    const getProgressLabel = () => {
+      const p = reclusterProgress.value;
+      if (!p) return "";
+
+      if (p.phase === "removing_topics") {
+        return `Removing old topics... ${p.current}/${p.total}`;
+      } else if (p.phase === "clustering") {
+        return `Clustering articles... ${p.current}/${p.total}`;
+      } else if (p.phase === "done") {
+        return "Re-clustering complete!";
+      }
+      return "Starting...";
+    };
+
     const reclusterTopics = async () => {
       if (reclusteringTopics.value) return;
 
       reclusteringTopics.value = true;
       reclusterStats.value = null;
+      reclusterProgress.value = null;
+      startProgressPolling();
 
       try {
         const result = await apiClient.reclusterTopics();
@@ -498,6 +548,7 @@ const app = createApp({
         const errorMsg = error.response?.data?.detail || error.message || "Unknown error";
         showToast(`Re-clustering failed: ${errorMsg}`, "error", 5000);
       } finally {
+        stopProgressPolling();
         reclusteringTopics.value = false;
       }
     };
@@ -995,6 +1046,9 @@ const app = createApp({
       reclusterTopics,
       reclusteringTopics,
       reclusterStats,
+      reclusterProgress,
+      getProgressPercent,
+      getProgressLabel,
       rssFeeds,
       showAddFeedForm,
       newFeed,

@@ -98,6 +98,13 @@ class APIClient {
   }
 
   /**
+   * Get real-time progress of re-clustering operation
+   */
+  async getReclusterProgress() {
+    return this.fetch("/topics/recluster/progress");
+  }
+
+  /**
    * Get all RSS feeds
    */
   async getRssFeeds() {

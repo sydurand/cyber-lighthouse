@@ -9,6 +9,25 @@ router = APIRouter(prefix="/api", tags=["topics"])
 
 db = Database()
 
+# Global state for re-clustering progress
+_recluster_progress = {
+    "active": False,
+    "phase": "",  # "removing_topics", "clustering", "done"
+    "current": 0,
+    "total": 0,
+    "stats": {},
+}
+
+
+def _get_recluster_progress():
+    return _recluster_progress
+
+
+@router.get("/topics/recluster/progress")
+async def get_recluster_progress() -> JSONResponse:
+    """Get real-time progress of ongoing re-clustering operation."""
+    return JSONResponse(content=_recluster_progress)
+
 
 @router.get("/topics")
 async def get_topics(
@@ -64,27 +83,46 @@ async def recluster_articles() -> JSONResponse:
     try:
         start_time = time.time()
 
+        # Initialize progress tracking
+        _recluster_progress.update({
+            "active": True,
+            "phase": "removing_topics",
+            "current": 0,
+            "total": 0,
+            "stats": {},
+        })
+
         # Get all articles
         all_articles = db.get_all_articles()
-        
+
         # Get all existing topics and unlink all articles
         all_topics = db.get_all_topics_with_embeddings(processed_only=False)
         old_topic_count = len(all_topics)
-        
+
         if old_topic_count > 0:
+            _recluster_progress["total"] = old_topic_count
+            _recluster_progress["phase"] = "removing_topics"
             logger.info(f"Removing {old_topic_count} existing topics and unlinking all articles...")
-            for topic in all_topics:
+            for i, topic in enumerate(all_topics, 1):
                 try:
                     # Unlink all articles from this topic
                     articles = db.get_topic_linked_articles(topic['id'])
                     for art in articles:
                         db.remove_article_from_topic(art['id'], topic['id'])
-                    
+
                     # Delete the topic
                     db.delete_topic(topic['id'])
                 except Exception as e:
                     logger.warning(f"Error removing topic #{topic['id']}: {e}")
-        
+                
+                _recluster_progress["current"] = i
+
+        _recluster_progress.update({
+            "phase": "clustering",
+            "current": 0,
+            "total": len(all_articles),
+        })
+
         logger.info(f"All topics cleared. Re-clustering {len(all_articles)} articles from scratch...")
 
         stats = {
@@ -98,8 +136,10 @@ async def recluster_articles() -> JSONResponse:
         # Process ALL articles through clustering
         logger.info(f"Processing all {len(all_articles)} articles...")
         
-        for article in all_articles:
+        for i, article in enumerate(all_articles, 1):
             try:
+                _recluster_progress["current"] = i
+
                 article_data = {
                     "title": article.get("title", ""),
                     "content": article.get("content", "")[:450],
@@ -145,6 +185,13 @@ async def recluster_articles() -> JSONResponse:
 
         elapsed = time.time() - start_time
         stats["elapsed_seconds"] = round(elapsed, 2)
+
+        # Mark progress as complete
+        _recluster_progress.update({
+            "active": False,
+            "phase": "done",
+            "stats": stats,
+        })
 
         logger.info(
             f"Re-clustering complete: {stats['articles_clustered']} articles clustered, "
