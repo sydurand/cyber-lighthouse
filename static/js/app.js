@@ -119,9 +119,17 @@ const app = createApp({
       }
 
       if (filterTag.value) {
-        filtered = filtered.filter((a) => 
+        filtered = filtered.filter((a) =>
           a.tags && a.tags.some(tag => tag.toLowerCase().includes(filterTag.value.toLowerCase()))
         );
+      }
+
+      if (historyDateFrom.value) {
+        filtered = filtered.filter((a) => a.date && a.date >= historyDateFrom.value);
+      }
+
+      if (historyDateTo.value) {
+        filtered = filtered.filter((a) => a.date && a.date <= historyDateTo.value);
       }
 
       return filtered;
