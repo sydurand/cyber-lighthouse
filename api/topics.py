@@ -49,12 +49,11 @@ async def get_topics(
 @router.post("/topics/recluster")
 async def recluster_articles() -> JSONResponse:
     """
-    Re-run article clustering on all unclustered articles.
+    Re-run article clustering from scratch on ALL articles.
 
-    This is useful when:
-    - Clustering failed due to AI service being down
-    - New articles were added but not clustered
-    - You want to re-organize existing topics
+    This deletes ALL existing topics and re-clusters all articles,
+    which fixes cases where similar articles were incorrectly split
+    into separate topics due to missing embeddings or other issues.
 
     Returns statistics about the re-clustering operation.
     """
@@ -67,29 +66,39 @@ async def recluster_articles() -> JSONResponse:
 
         # Get all articles
         all_articles = db.get_all_articles()
-        logger.info(f"Re-clustering: {len(all_articles)} articles to process")
-
-        # Get articles that are NOT yet linked to any topic
+        
+        # Get all existing topics and unlink all articles
         all_topics = db.get_all_topics_with_embeddings(processed_only=False)
-        clustered_article_ids = set()
-        for topic in all_topics:
-            topic_articles = db.get_topic_linked_articles(topic["id"])
-            for a in topic_articles:
-                clustered_article_ids.add(a.get("id"))
-
-        unclustered = [a for a in all_articles if a.get("id") not in clustered_article_ids]
-        logger.info(f"Found {len(unclustered)} unclustered articles")
+        old_topic_count = len(all_topics)
+        
+        if old_topic_count > 0:
+            logger.info(f"Removing {old_topic_count} existing topics and unlinking all articles...")
+            for topic in all_topics:
+                try:
+                    # Unlink all articles from this topic
+                    articles = db.get_topic_linked_articles(topic['id'])
+                    for art in articles:
+                        db.remove_article_from_topic(art['id'], topic['id'])
+                    
+                    # Delete the topic
+                    db.delete_topic(topic['id'])
+                except Exception as e:
+                    logger.warning(f"Error removing topic #{topic['id']}: {e}")
+        
+        logger.info(f"All topics cleared. Re-clustering {len(all_articles)} articles from scratch...")
 
         stats = {
             "total_articles": len(all_articles),
-            "already_clustered": len(clustered_article_ids),
-            "unclustered": len(unclustered),
+            "topics_removed": old_topic_count,
             "new_topics_created": 0,
             "articles_clustered": 0,
             "errors": 0,
         }
 
-        for article in unclustered:
+        # Process ALL articles through clustering
+        logger.info(f"Processing all {len(all_articles)} articles...")
+        
+        for article in all_articles:
             try:
                 article_data = {
                     "title": article.get("title", ""),
@@ -128,7 +137,7 @@ async def recluster_articles() -> JSONResponse:
                     # Add to existing topic
                     db.add_article_to_topic(article.get("id"), topic_id)
                     stats["articles_clustered"] += 1
-                    logger.debug(f"Article added to topic #{topic_id}")
+                    logger.debug(f"Article #{article.get('id')} added to topic #{topic_id}")
 
             except Exception as e:
                 stats["errors"] += 1
@@ -143,7 +152,7 @@ async def recluster_articles() -> JSONResponse:
         )
 
         return JSONResponse(content={
-            "message": "Re-clustering completed",
+            "message": "Re-clustering completed - all topics rebuilt from scratch",
             "stats": stats,
         })
 

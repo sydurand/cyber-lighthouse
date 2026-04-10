@@ -594,6 +594,53 @@ class Database:
             logger.error(f"Error adding article to topic: {e}")
             return False
 
+    def remove_article_from_topic(self, article_id: int, topic_id: int) -> bool:
+        """
+        Remove an article from a topic.
+
+        Args:
+            article_id: Article ID
+            topic_id: Topic ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM article_topics
+                    WHERE article_id = ? AND topic_id = ?
+                """, (article_id, topic_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error removing article from topic: {e}")
+            return False
+
+    def delete_topic(self, topic_id: int) -> bool:
+        """
+        Delete a topic and all its article associations.
+
+        Args:
+            topic_id: Topic ID
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                # Delete article associations first (foreign key constraint)
+                cursor.execute("DELETE FROM article_topics WHERE topic_id = ?", (topic_id,))
+                # Delete the topic
+                cursor.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting topic: {e}")
+            return False
+
     def get_topic_by_id(self, topic_id: int) -> dict:
         """
         Get topic details by ID.
