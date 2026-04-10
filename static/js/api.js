@@ -137,14 +137,33 @@ class APIClient {
    * Export alerts
    */
   async exportAlerts(format = "markdown", limit = 100) {
-    return this.fetch(`/export/alerts?format=${format}&limit=${limit}`);
+    const response = await fetch(`${this.baseURL}/export/alerts?format=${format}&limit=${limit}`);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+    const content = await response.text();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+    const filename = filenameMatch ? filenameMatch[1] : `alerts.${format === "csv" ? "csv" : "md"}`;
+
+    return { content, filename };
   }
 
   /**
    * Export report
    */
   async exportReport(index, format = "markdown") {
-    return this.fetch(`/export/report/${index}?format=${format}`);
+    const response = await fetch(`${this.baseURL}/export/report/${index}?format=${format}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: "Export failed" }));
+      return { error: error.detail || "Export failed" };
+    }
+
+    const content = await response.text();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+    const filename = filenameMatch ? filenameMatch[1] : `report_${index}.md`;
+
+    return { content, filename };
   }
 
   /**
