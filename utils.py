@@ -1208,7 +1208,7 @@ def get_embedding_model():
         return None
 
     # Thread-safe model loading
-    with _embedding_model_lock:
+    with _embedding_lock:
         # Double-check after acquiring lock
         if _embedding_model is not None or _embedding_model_load_failed:
             return _embedding_model
