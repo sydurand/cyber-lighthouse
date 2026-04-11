@@ -1190,12 +1190,6 @@ def send_teams_notification(message: str) -> bool:
         return False
 
 
-# Global embedding model cache with thread safety
-_embedding_model = None
-_embedding_model_load_failed = False
-_embedding_model_lock = threading.Lock()
-
-
 def get_embedding_model():
     """Get or load the sentence-transformers embedding model (cached, thread-safe).
 
