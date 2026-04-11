@@ -781,13 +781,13 @@
               <!-- Date Range Picker -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm text-slate-400 mb-1">From Date (YYYY-MM-DD)</label>
-                  <input v-model="historyDateFrom" type="date" @change="applyHistoryFilters()"
+                  <label class="block text-sm text-slate-400 mb-1">From Date (DD/MM/YYYY)</label>
+                  <input v-model="historyDateFrom" type="date" lang="en-GB" @change="applyHistoryFilters()"
                          class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label class="block text-sm text-slate-400 mb-1">To Date (YYYY-MM-DD)</label>
-                  <input v-model="historyDateTo" type="date" @change="applyHistoryFilters()"
+                  <label class="block text-sm text-slate-400 mb-1">To Date (DD/MM/YYYY)</label>
+                  <input v-model="historyDateTo" type="date" lang="en-GB" @change="applyHistoryFilters()"
                          class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
                 </div>
               </div>
