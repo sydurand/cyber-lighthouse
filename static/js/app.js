@@ -166,6 +166,15 @@ const app = createApp({
     });
 
     const getSeverityCount = (severity) => {
+      return alerts.value.filter(alert => alert.severity === severity).length;
+    };
+
+    const getSeverityPercentage = (severity) => {
+      const count = alerts.value.filter(alert => alert.severity === severity).length;
+      return alerts.value.length > 0 ? (count / alerts.value.length * 100) : 0;
+    };
+
+    const getSeverityCountLast7Days = (severity) => {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const cutoffDate = sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -175,7 +184,7 @@ const app = createApp({
       ).length;
     };
 
-    const getSeverityPercentage = (severity) => {
+    const getSeverityPercentageLast7Days = (severity) => {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const cutoffDate = sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -1075,6 +1084,8 @@ const app = createApp({
       getSeverityIcon,
       getSeverityCount,
       getSeverityPercentage,
+      getSeverityCountLast7Days,
+      getSeverityPercentageLast7Days,
       getThreatLevel,
       getThreatLevelColor,
       getThreatLevelIcon,
