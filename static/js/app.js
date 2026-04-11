@@ -166,12 +166,25 @@ const app = createApp({
     });
 
     const getSeverityCount = (severity) => {
-      return alerts.value.filter(alert => alert.severity === severity).length;
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const cutoffDate = sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      return alerts.value.filter(
+        (alert) => alert.severity === severity && alert.date && alert.date >= cutoffDate
+      ).length;
     };
 
     const getSeverityPercentage = (severity) => {
-      const count = alerts.value.filter(alert => alert.severity === severity).length;
-      return alerts.value.length > 0 ? (count / alerts.value.length * 100) : 0;
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const cutoffDate = sevenDaysAgo.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      const recentAlerts = alerts.value.filter(
+        (alert) => alert.date && alert.date >= cutoffDate
+      );
+      const count = recentAlerts.filter((alert) => alert.severity === severity).length;
+      return recentAlerts.length > 0 ? (count / recentAlerts.length * 100) : 0;
     };
 
     const getThreatLevel = () => {
