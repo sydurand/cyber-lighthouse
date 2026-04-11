@@ -27,6 +27,11 @@ db = Database()
 cache = get_cache()
 
 
+def _seven_days_ago_cutoff() -> str:
+    """Return date string 7 days ago in YYYY-MM-DD format."""
+    return (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+
 def _get_trending_topic_map():
     """
     Build a mapping of article_id -> topic_id for topics that meet
@@ -208,7 +213,9 @@ async def get_alerts(
             all_alerts = [a for a in all_alerts if a.id in primary_alert_ids]
 
         trending_tags = get_trending_tags([
-            {"id": a.id, "tags": a.tags} for a in all_alerts
+            {"id": a.id, "tags": a.tags, "date": a.date}
+            for a in all_alerts
+            if a.date and a.date >= _seven_days_ago_cutoff()
         ])
 
         paginated = all_alerts[offset : offset + limit]
