@@ -17,7 +17,7 @@ const app = createApp({
     const allArticles = ref([]);
     const appVersion = ref("");
     const searchQuery = ref("");
-    const filterSource = ref("");
+    const filterSources = ref([]);
     const filterTag = ref("");
     const filterSeverity = ref("");
     const alertsLimit = ref(20);
@@ -32,6 +32,9 @@ const app = createApp({
     const historyDateFrom = ref("");
     const historyDateTo = ref("");
     const historyTotalCount = ref(0);
+
+    // Source dropdown toggle
+    const showSourceDropdown = ref(false);
 
     // Reports
     const expandedReports = ref(new Set());
@@ -114,8 +117,8 @@ const app = createApp({
         );
       }
 
-      if (filterSource.value) {
-        filtered = filtered.filter((a) => a.source === filterSource.value);
+      if (filterSources.value.length > 0) {
+        filtered = filtered.filter((a) => filterSources.value.includes(a.source));
       }
 
       if (filterTag.value) {
@@ -294,7 +297,13 @@ const app = createApp({
             apiClient.getReports(),
             apiClient.getStatistics(),
             apiClient.getSystemStatus(),
-            apiClient.searchArticles({ limit: 10000, tag: filterTag.value || undefined }),
+            apiClient.searchArticles({
+              limit: 10000,
+              sources: filterSources.value.length > 0 ? filterSources.value : undefined,
+              tag: filterTag.value || undefined,
+              date_from: historyDateFrom.value || undefined,
+              date_to: historyDateTo.value || undefined,
+            }),
           ]);
 
         const rawAlerts = alertsData.alerts || [];
@@ -398,6 +407,26 @@ const app = createApp({
 
     const applyHistoryFilters = () => {
       historyPage.value = 1;
+      refreshData();
+    };
+
+    const toggleAllSources = () => {
+      if (filterSources.value.length > 0) {
+        filterSources.value = [];
+      } else {
+        filterSources.value = [...uniqueSources.value];
+      }
+      applyHistoryFilters();
+    };
+
+    const removeSourceFilter = (source) => {
+      filterSources.value = filterSources.value.filter((s) => s !== source);
+      applyHistoryFilters();
+    };
+
+    const clearSourceFilters = () => {
+      filterSources.value = [];
+      applyHistoryFilters();
     };
 
     const exportAlerts = async (format) => {
@@ -944,6 +973,13 @@ const app = createApp({
 
       // Poll task status every 60s
       setInterval(() => fetchTaskStatus(), 60000);
+
+      // Close source dropdown when clicking outside
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".source-dropdown-container")) {
+          showSourceDropdown.value = false;
+        }
+      });
     });
 
     return {
@@ -956,7 +992,7 @@ const app = createApp({
       allArticles,
       appVersion,
       searchQuery,
-      filterSource,
+      filterSources,
       filterTag,
       filterSeverity,
       alertsPage,
@@ -992,6 +1028,10 @@ const app = createApp({
       changeAlertsPage,
       changeHistoryPage,
       applyHistoryFilters,
+      toggleAllSources,
+      removeSourceFilter,
+      clearSourceFilters,
+      showSourceDropdown,
       exportAlerts,
       exportReport,
       reanalyzeAlert,

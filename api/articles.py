@@ -16,7 +16,7 @@ cache = get_cache()
 @router.get("/articles", response_model=ArticlesListResponse)
 async def search_articles(
     search: Optional[str] = Query(None),
-    source: Optional[str] = Query(None),
+    source: Optional[str] = Query(None, description="Comma-separated list of sources"),
     tag: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
@@ -28,7 +28,7 @@ async def search_articles(
 
     Args:
         search: Search term in title or content
-        source: Filter by source
+        source: Filter by source(s) (comma-separated for multiple)
         tag: Filter by tag (case-insensitive partial match)
         date_from: Start date (YYYY-MM-DD)
         date_to: End date (YYYY-MM-DD)
@@ -51,7 +51,9 @@ async def search_articles(
             ]
 
         if source:
-            filtered = [a for a in filtered if a.get("source") == source]
+            sources = [s.strip() for s in source.split(",") if s.strip()]
+            if sources:
+                filtered = [a for a in filtered if a.get("source") in sources]
 
         if tag:
             tag_lower = tag.lower()

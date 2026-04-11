@@ -60,7 +60,7 @@ class APIClient {
       limit: options.limit || 20,
       offset: options.offset || 0,
       ...(options.search && { search: options.search }),
-      ...(options.source && { source: options.source }),
+      ...(options.sources && options.sources.length > 0 && { source: options.sources.join(",") }),
       ...(options.tag && { tag: options.tag }),
       ...(options.date_from && { date_from: options.date_from }),
       ...(options.date_to && { date_to: options.date_to }),

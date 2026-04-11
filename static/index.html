@@ -725,51 +725,72 @@
             <div class="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-4">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input v-model="searchQuery" @change="applyHistoryFilters()"
-                       type="text" placeholder="🔍 Search articles..." 
+                       type="text" placeholder="🔍 Search articles..."
                        class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors" />
-                <select v-model="filterSource" @change="applyHistoryFilters()"
-                        class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors">
-                  <option value="">All Sources</option>
-                  <option v-for="source in uniqueSources" :key="source" :value="source">{{ source }}</option>
-                </select>
+
+                <!-- Multi-Select Source Dropdown -->
+                <div class="relative source-dropdown-container">
+                  <label class="block text-sm text-slate-400 mb-1">Sources</label>
+                  <div class="relative">
+                    <button @click="showSourceDropdown = !showSourceDropdown"
+                            type="button"
+                            class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-3 text-left focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors flex justify-between items-center">
+                      <span class="truncate">
+                        <span v-if="filterSources.length === 0" class="text-slate-400">All Sources</span>
+                        <span v-else>{{ filterSources.length }} source(s) selected</span>
+                      </span>
+                      <i :class="['fas ml-2 transition-transform', showSourceDropdown ? 'fa-chevron-up' : 'fa-chevron-down']"></i>
+                    </button>
+                    <div v-show="showSourceDropdown"
+                         class="absolute z-10 mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                      <label class="flex items-center px-4 py-3 border-b border-slate-700 cursor-pointer hover:bg-slate-700 transition-colors">
+                        <input type="checkbox"
+                               :checked="filterSources.length === 0"
+                               @change="toggleAllSources()"
+                               class="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500" />
+                        <span class="ml-3 text-white font-medium">All Sources</span>
+                      </label>
+                      <label v-for="source in uniqueSources" :key="source"
+                             class="flex items-center px-4 py-3 cursor-pointer hover:bg-slate-700 transition-colors">
+                        <input type="checkbox"
+                               :value="source"
+                               v-model="filterSources"
+                               @change="applyHistoryFilters()"
+                               class="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500" />
+                        <span class="ml-3 text-slate-300">{{ source }}</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
-              
-              <!-- Source Filter Chips -->
-              <div class="flex flex-wrap gap-2">
-                <button @click="filterSource = ''; applyHistoryFilters()"
-                        :class="['px-3 py-1 rounded-full text-sm transition-colors',
-                                 !filterSource ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
-                  All
-                </button>
-                <button v-for="source in uniqueSources.slice(0, 8)" :key="source"
-                        @click="filterSource = filterSource === source ? '' : source; applyHistoryFilters()"
-                        :class="['px-3 py-1 rounded-full text-sm transition-colors',
-                                 filterSource === source ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600']">
+
+              <!-- Selected Sources Chips -->
+              <div v-if="filterSources.length > 0" class="flex flex-wrap gap-2">
+                <button v-for="source in filterSources" :key="source"
+                        @click="removeSourceFilter(source)"
+                        class="px-3 py-1 rounded-full text-sm bg-blue-600/30 text-blue-300 border border-blue-500/30 hover:bg-blue-600/50 transition-colors flex items-center gap-2">
                   {{ source }}
+                  <i class="fas fa-times text-xs"></i>
+                </button>
+                <button @click="clearSourceFilters()"
+                        class="px-3 py-1 rounded-full text-sm bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/40 transition-colors">
+                  Clear all
                 </button>
               </div>
 
               <!-- Date Range Picker -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm text-slate-400 mb-1">From Date</label>
+                  <label class="block text-sm text-slate-400 mb-1">From Date (YYYY-MM-DD)</label>
                   <input v-model="historyDateFrom" type="date" @change="applyHistoryFilters()"
                          class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
                 </div>
                 <div>
-                  <label class="block text-sm text-slate-400 mb-1">To Date</label>
+                  <label class="block text-sm text-slate-400 mb-1">To Date (YYYY-MM-DD)</label>
                   <input v-model="historyDateTo" type="date" @change="applyHistoryFilters()"
                          class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" />
                 </div>
               </div>
-              
-              <p v-if="filterTag" class="text-sm text-blue-300">
-                <i class="fas fa-tag mr-1"></i>
-                Filtered by tag: <strong>{{ filterTag }}</strong>
-                <button @click="filterTag = ''" class="ml-2 text-red-400 hover:text-red-300">
-                  <i class="fas fa-times"></i> Clear
-                </button>
-              </p>
             </div>
 
             <!-- Articles List -->
