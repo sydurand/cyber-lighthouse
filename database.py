@@ -381,6 +381,27 @@ class Database:
             logger.error(f"Error retrieving unprocessed articles: {e}")
             return []
 
+    def get_articles_needing_analysis(self, limit: int = 50) -> list:
+        """Get articles that are missing AI analysis."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                # Un article a besoin d'analyse si sa colonne analysis est NULL, vide 
+                # ou contient le message de "Pending analysis"
+                cursor.execute("""
+                    SELECT * FROM articles
+                    WHERE analysis IS NULL 
+                       OR analysis = '' 
+                       OR analysis LIKE '[Pending%'
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """, (limit,))
+                return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving articles needing analysis: {e}")
+            return []
+
     def get_all_articles(self) -> list:
         """Get all articles from the database."""
         try:

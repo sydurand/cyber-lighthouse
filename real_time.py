@@ -136,6 +136,41 @@ Be concise but informative. Each line should be a complete sentence."""
         return None
 
 
+def reprocess_failed_analyses() -> int:
+    """
+    Find articles with missing analyses and attempt to generate them.
+    Returns the number of successfully re-analyzed articles.
+    """
+    logger.info("Checking for articles requiring background re-analysis...")
+    
+    # Get up to 10 articles to avoid overwhelming the API in one background task
+    needing_analysis = db.get_articles_needing_analysis(limit=10)
+    if not needing_analysis:
+        logger.debug("No articles found needing analysis.")
+        return 0
+        
+    success_count = 0
+    for art in needing_analysis:
+        # Respect rate limits
+        if not call_counter.can_make_call():
+            logger.warning("Rate limit reached during background re-analysis, stopping.")
+            break
+            
+        title = art.get('title')
+        content = art.get('content', '')
+        
+        logger.info(f"Re-analyzing article: {title[:50]}...")
+        analysis = analyze_article_with_ai(title, content, force_refresh=True)
+        
+        if analysis and not analysis.startswith("[Pending"):
+            db.set_article_analysis(art.get('link'), analysis)
+            success_count += 1
+            
+    if success_count > 0:
+        logger.info(f"Successfully re-analyzed {success_count} articles in background.")
+    return success_count
+
+
 def cluster_article_into_topics(article_data: dict, db: Database) -> tuple:
     """
     Cluster article into existing topics using semantic similarity.

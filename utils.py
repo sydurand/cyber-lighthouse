@@ -1261,6 +1261,60 @@ def get_embedding_model():
             return None
 
 
+def _ai_verify_similarity(title1: str, content1: str, title2: str, content2: str) -> bool:
+    """
+    Use AI to verify if two articles discuss the exact same security topic.
+    Used for Tier 2 clustering (borderline semantic similarity).
+    """
+    try:
+        from ai_client import get_ai_client
+        from optimization import get_call_counter
+
+        call_counter = get_call_counter()
+        if not call_counter.can_make_call():
+            return False
+
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
+        
+        prompt = f"""Compare these two cybersecurity articles:
+
+Article A: {title1}
+Content A: {content1[:300]}
+
+Article B: {title2}
+Content B: {content2[:300]}
+
+Are they discussing the SAME specific incident, vulnerability (CVE), or campaign? 
+Answer ONLY 'YES' or 'NO'."""
+
+        instruction = "You are a CTI expert. Identify if two reports are about the same specific event or vulnerability."
+        
+        result = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.0,
+            timeout=30
+        )
+        call_counter.add_call()
+        return "YES" in result.strip().upper()
+    except Exception as e:
+        logger.debug(f"AI similarity verification failed: {e}")
+        return False
+
+
+def _has_unique_entity_match(text1: str, text2: str) -> bool:
+    """Check for identical unique entities like CVEs."""
+    import re
+    
+    # Match CVEs (Standard identifiers)
+    cves1 = set(re.findall(r'CVE-\d{4}-\d{4,}', text1.upper()))
+    cves2 = set(re.findall(r'CVE-\d{4}-\d{4,}', text2.upper()))
+    if cves1 and cves2 and (cves1 & cves2):
+        return True
+        
+    return False
+
+
 def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, threshold: float = None) -> tuple:
     """
     Cluster article into existing topics using semantic similarity.
@@ -1282,6 +1336,10 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
     """
     from datetime import datetime, timedelta
     
+    # Tiered thresholds logic
+    AUTO_CLUSTER_THRESHOLD = threshold if threshold else Config.SEMANTIC_SIMILARITY_THRESHOLD
+    AI_VERIFY_FLOOR = 0.40  # Start considering AI verification at this level
+
     if threshold is None:
         threshold = Config.SEMANTIC_SIMILARITY_THRESHOLD
 
@@ -1354,19 +1412,31 @@ def cluster_articles_with_embeddings(new_article: dict, existing_topics: list, t
                 best_match_id = topic.get('id')
                 best_topic_title = topic.get('main_title', '')[:60]
 
-        # Return clustering decision
-        if best_match_id is not None and best_similarity >= threshold:
-            logger.info(
-                f"✓ Article clustered to topic #{best_match_id} '{best_topic_title}' "
-                f"(similarity: {best_similarity:.3f} >= {threshold:.2f})"
-            )
-            return (False, best_match_id)
-        else:
-            reason = "no matching topics" if best_match_id is None else f"best similarity {best_similarity:.3f} < threshold {threshold:.2f}"
-            if timeframe_days > 0:
-                reason += f" (filtered to last {timeframe_days} days)"
-            logger.info(f"✗ New topic created ({reason})")
-            return (True, None)
+        if best_match_id is not None:
+            # Tier 1: Auto-cluster (Haute similarité sémantique)
+            if best_similarity >= AUTO_CLUSTER_THRESHOLD:
+                logger.info(f"✓ Auto-clustered to topic #{best_match_id} (sim: {best_similarity:.3f})")
+                return (False, best_match_id)
+            
+            # Tier 2: Similarité moyenne + Vérification Entités OU IA
+            if best_similarity >= AI_VERIFY_FLOOR:
+                topic_data = next(t for t in existing_topics if t['id'] == best_match_id)
+                
+                # Vérification des entités uniques (cPanel, CopyFail, CVE...)
+                entity_match = _has_unique_entity_match(article_text, topic_data.get('main_title', ''))
+                
+                if entity_match or _ai_verify_similarity(new_article.get('title', ''), new_article.get('content', ''), 
+                                                       topic_data.get('main_title', ''), ''):
+                    logger.info(f"✓ AI/Entity verified cluster to topic #{best_match_id} (sim: {best_similarity:.3f})")
+                    return (False, best_match_id)
+
+        # Tier 3: Nouveau sujet
+        reason = "no matching topics" if best_match_id is None else f"best similarity {best_similarity:.3f} below verification threshold"
+        if timeframe_days > 0 and best_match_id is None:
+            reason += f" (filtered to last {timeframe_days} days)"
+        
+        logger.info(f"✗ New topic created ({reason})")
+        return (True, None)
 
     except Exception as e:
         logger.error(f"Error in semantic clustering: {e}", exc_info=True)

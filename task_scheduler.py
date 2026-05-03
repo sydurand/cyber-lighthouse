@@ -40,6 +40,7 @@ class TaskStatus:
         with self._lock:
             return {
                 "name": self.name,
+                "type": getattr(self, "type", "generic"),
                 "enabled": self.enabled,
                 "last_run": self.last_run,
                 "last_result": self.last_result,
@@ -65,10 +66,12 @@ class TaskScheduler:
 
         self.realtime_status = TaskStatus("Real-time Monitoring")
         self.daily_summary_status = TaskStatus("Daily Summary")
+        self.reanalysis_status = TaskStatus("Background Re-analysis")
 
         self._stop_event = threading.Event()
         self._realtime_thread = None
         self._daily_thread = None
+        self._reanalysis_thread = None
 
     def start(self):
         """Start background task loops."""
@@ -76,9 +79,11 @@ class TaskScheduler:
 
         self._realtime_thread = threading.Thread(target=self._realtime_loop, daemon=True, name="realtime-monitor")
         self._daily_thread = threading.Thread(target=self._daily_summary_loop, daemon=True, name="daily-summary")
+        self._reanalysis_thread = threading.Thread(target=self._reanalysis_loop, daemon=True, name="reanalysis-worker")
 
         self._realtime_thread.start()
         self._daily_thread.start()
+        self._reanalysis_thread.start()
 
     def stop(self):
         """Stop background task loops."""
@@ -89,6 +94,8 @@ class TaskScheduler:
             self._realtime_thread.join(timeout=30)
         if self._daily_thread:
             self._daily_thread.join(timeout=30)
+        if self._reanalysis_thread:
+            self._reanalysis_thread.join(timeout=30)
 
         logger.info("Task scheduler stopped")
 
@@ -158,6 +165,7 @@ class TaskScheduler:
         return {
             "realtime": self.realtime_status.to_dict(),
             "daily_summary": self.daily_summary_status.to_dict(),
+            "reanalysis": self.reanalysis_status.to_dict(),
             "scheduler_running": not self._stop_event.is_set(),
         }
 
@@ -186,6 +194,33 @@ class TaskScheduler:
             self._stop_event.wait(self.realtime_interval)
 
         logger.info("Real-time monitoring loop stopped")
+
+    def _reanalysis_loop(self):
+        """Loop to periodically fix articles that failed AI analysis."""
+        # Run every 30 minutes
+        interval = 1800 
+        logger.info("Re-analysis background loop started")
+        
+        while not self._stop_event.is_set():
+            try:
+                next_run = datetime.now() + timedelta(seconds=interval)
+                self.reanalysis_status.mark_start(next_run)
+                
+                from real_time import reprocess_failed_analyses
+                count = reprocess_failed_analyses()
+                
+                self.reanalysis_status.mark_complete(article_count=count)
+                if count > 0:
+                    logger.info(f"Background re-analysis: fixed {count} articles.")
+                
+            except Exception as e:
+                self.reanalysis_status.mark_error(str(e))
+                logger.error(f"Re-analysis loop error: {e}")
+                
+            # Sleep with check for stop event
+            self._stop_event.wait(interval)
+            
+        logger.info("Re-analysis background loop stopped")
 
     def _daily_summary_loop(self):
         """Background loop for daily summary generation."""
