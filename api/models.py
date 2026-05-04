@@ -4,40 +4,44 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
-class ArticleResponse(BaseModel):
+
+class ArticleBase(BaseModel):
+    """Base model for articles and alerts."""
+
+    id: int
+    source: str
+    title: str
+    link: str
+    date: str
+    analysis: Optional[str] = None
+    severity: str = Field(default="medium", description="Alert severity level")
+    tags: List[str] = Field(default_factory=list, description="Security tags extracted from content")
+
+    class Config:
+        from_attributes = True
+
+
+class ArticleResponse(ArticleBase):
     """Response model for articles."""
 
-    id: int
+    content: str
+    processed_for_daily: bool
+
+
+
+class TopicSource(BaseModel):
+    """Model for a related article from the same trending topic."""
     source: str
     title: str
-    content: str
     link: str
     date: str
-    analysis: Optional[str] = None
-    processed_for_daily: bool
-    severity: str = Field(default="medium", description="Alert severity level")
-    tags: List[str] = Field(default_factory=list, description="Security tags extracted from article")
-
-    class Config:
-        from_attributes = True
 
 
-class AlertResponse(BaseModel):
+class AlertResponse(ArticleBase):
     """Response model for alerts (latest articles with analysis)."""
 
-    id: int
-    source: str
-    title: str
-    link: str
-    date: str
-    analysis: Optional[str] = None
-    tags: List[str] = Field(default_factory=list, description="Security tags extracted from alert")
     timestamp: datetime = Field(default_factory=datetime.now)
-    severity: str = Field(default="medium", description="Alert severity level")
-    topic_sources: List[dict] = Field(default_factory=list, description="Related articles from same trending topic")
-
-    class Config:
-        from_attributes = True
+    topic_sources: List[TopicSource] = Field(default_factory=list, description="Related articles from same trending topic")
 
 
 class ReportResponse(BaseModel):
@@ -46,7 +50,7 @@ class ReportResponse(BaseModel):
     id: Optional[int] = None
     report_content: str
     articles_count: int
-    generated_date: str
+    generated_date: datetime
     timestamp: datetime = Field(default_factory=datetime.now)
     report_id: str = Field(default="", description="Cache key for download")
 
@@ -106,6 +110,13 @@ class SystemStatusResponse(BaseModel):
     api_quota_reset_in_seconds: int
 
 
+
+class TrendingTagInfo(BaseModel):
+    """Model for information about a trending tag."""
+    count: int
+    # Add other fields if known, e.g., 'articles': List[str]
+
+
 class FilterStats(BaseModel):
     """Statistics about filtering and deduplication."""
 
@@ -114,7 +125,7 @@ class FilterStats(BaseModel):
     filtered_out: int = Field(description="Articles removed by relevance filter")
     articles_after_dedup: int = Field(description="Articles after deduplication")
     duplicates_grouped: int = Field(description="Duplicate articles grouped")
-    trending_tags: Dict[str, Dict[str, Any]] = Field(description="Top trending security tags with counts")
+    trending_tags: Dict[str, TrendingTagInfo] = Field(description="Top trending security tags with counts")
 
 
 class AlertsListResponse(BaseModel):

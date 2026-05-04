@@ -464,6 +464,185 @@ INSTRUCTIONS:
         return fallback_tags
 
 
+def extract_tags_with_ai(title: str, analysis: str, content: str = "") -> list:
+    """
+    Extract security tags from article title and analysis using AI.
+
+    Uses AI to map article content to the controlled TAG_CATEGORIES vocabulary.
+    Falls back to keyword extraction if AI is unavailable.
+    """
+    if not title or not analysis:
+        return []
+
+    # Check cache first
+    cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
+    if cache_key in _tag_cache:
+        logger.debug(f"Tag cache hit for: {title[:50]}...")
+        return _tag_cache[cache_key]
+
+    # Try AI extraction first (maps to controlled vocabulary)
+    try:
+        from config import Config
+        from ai_client import get_ai_client
+        from optimization import get_call_counter
+
+        # Check if we can make API call
+        call_counter = get_call_counter()
+        if not call_counter.can_make_call():
+            logger.warning(f"Rate limit approaching, using keyword fallback for tags")
+            fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
+            _tag_cache[cache_key] = fallback_tags
+            return fallback_tags
+
+        ai_client = get_ai_client(provider=Config.AI_PROVIDER_REALTIME or None)
+
+        # Build controlled tag list for AI reference
+        valid_tags = get_tag_categories()
+        max_tags = get_max_tags()
+        allowed_tags = ", ".join(sorted(valid_tags))
+
+        # Extract actor names from current controlled vocab so AI can reference them
+        actor_tags = [t for t in valid_tags if t.startswith("#") and t not in ("#APT",)]
+
+        prompt = f"""Article Title: {title}
+
+Analysis: {analysis[:500]}
+
+You are tagging a cybersecurity threat intelligence article.
+
+AVAILABLE TAGS (use ONLY these):
+{allowed_tags}
+
+INSTRUCTIONS:
+1. Select 2-{max_tags} tags that best describe this article
+2. If the article mentions concepts NOT in the available tags list, suggest them as new tags prefixed with #. This includes:
+   - New ransomware groups, threat actors, or APT campaigns (e.g., #Revil, #GandCrab)
+   - Threat cluster names or tracking identifiers (e.g., #UAT10608, #APT41, #FIN7)
+   - Malware family names (e.g., #Emotet, #Conti)
+   - New attack techniques or TTPs (e.g., #SupplyChainAttack, #RogueAccessPoint)
+   - Notable vulnerabilities or exploit types (e.g., #SQLInjection, #Deserialization)
+   - Target sectors not yet covered (e.g., #Education, #Energy)
+   - CVE identifiers with full ID: #CVE-2026-12345 (NOT just #CVE)
+3. Return one tag per line, prefixed with #
+4. Do NOT include explanations
+5. Prioritize: CVE IDs > Threat Actors > TTPs > Impact > Sectors
+6. Suggest tags only if they represent a meaningful, recurring trend — not one-off mentions
+7. For cluster/tracking IDs, normalize them: remove hyphens/spaces, e.g. "UAT-10608" → #UAT10608
+8. For CVEs, ALWAYS use the full format: #CVE-YYYY-NNNNN (e.g., #CVE-2026-21896)"""
+
+        instruction = f"""You are a senior cybersecurity analyst specializing in threat intelligence. Tag articles by selecting from the available tags list. You may also propose new tags for any emerging threat category — new attack groups, threat clusters (e.g. #UAT10608), tracking identifiers, techniques, vulnerabilities, or target sectors — not yet in the controlled vocabulary. When CVEs are mentioned, ALWAYS extract them with full ID (#CVE-YYYY-NNNNN format), never use generic #CVE. Return tags only, one per line, starting with #."""
+
+        logger.debug(f"Extracting tags with AI for: {title[:50]}...")
+        response_text = ai_client.generate_content(
+            prompt=prompt,
+            system_instruction=instruction,
+            temperature=0.1,
+            timeout=30
+        )
+
+        call_counter.add_call()
+
+        # Parse and normalize tags from AI response
+        tags = []
+        emerging_tags = []
+        valid_tags = get_tag_categories()
+
+        for line in response_text.strip().split('\n'):
+            tag = line.strip()
+            # Remove bullet points, numbers, etc.
+            tag = tag.lstrip('-•*0123456789. ').strip()
+            # Ensure # prefix
+            if not tag.startswith('#'):
+                tag = f"#{tag}"
+            
+            # Normalize CVE tags to full format: #CVE-YYYY-NNNNN
+            cve_match = re.match(r'#cve[- ]?(\d{4})[- ]?(\d{4,})', tag, re.IGNORECASE)
+            if cve_match:
+                tag = f"#CVE-{cve_match.group(1)}-{cve_match.group(2)}"
+
+            # Validate against controlled vocabulary
+            if tag in valid_tags:
+                tags.append(tag)
+            elif tag and len(tag) > 2 and tag.startswith('#'):
+                # Potential new tag not in controlled vocabulary
+                emerging_tags.append(tag)
+
+        # Record emerging tags as suggestions
+        if emerging_tags:
+            try:
+                from database import Database
+                db = Database()
+                # Find article ID by title for retroactive tag assignment
+                article_id = None
+                all_articles = db.get_all_articles()
+                for a in all_articles:
+                    if a.get('title') == title:
+                        article_id = a.get('id')
+                        break
+
+                for new_tag in emerging_tags:
+                    db.suggest_tag(new_tag, article_title=title, article_id=article_id)
+                    logger.info(f"Emerging tag suggested: {new_tag} from '{title[:50]}...' (article_id: {article_id})")
+            except Exception as e:
+                logger.debug(f"Failed to record tag suggestion: {e}")
+
+        # Remove duplicates and limit
+        tags = list(dict.fromkeys(tags))[:max_tags]
+
+        if tags:
+            # Cache the AI result
+            _tag_cache[cache_key] = tags
+            logger.debug(f"AI extracted tags: {tags}")
+            return tags
+
+        # If AI returned no valid tags, use keyword fallback
+        logger.debug(f"AI returned no valid tags, using keyword fallback")
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
+        _tag_cache[cache_key] = fallback_tags
+        return fallback_tags
+
+    except Exception as e:
+        logger.debug(f"AI tag extraction failed (falling back to keywords): {e}")
+        # Use keyword fallback if AI fails
+        fallback_tags = _extract_tags_from_keywords_dynamic(title, analysis, content)
+        _tag_cache[cache_key] = fallback_tags
+        return fallback_tags
+
+
+def get_article_tags_with_fallback(article_id: int, title: str, analysis: str, content: str) -> list:
+    """
+    Retrieves tags for an article, with fallback to AI/keyword extraction and caching.
+
+    Args:
+        article_id: The ID of the article.
+        title: The title of the article.
+        analysis: The AI-generated analysis of the article.
+        content: The full content of the article.
+
+    Returns:
+        A list of tags for the article.
+    """
+    from database import Database
+    db = Database()
+    tags = db.get_article_tags(article_id)
+
+    if tags:
+        logger.debug(f"Tags retrieved from DB for article {article_id}.")
+        return tags
+    
+    # If not in DB, try AI/keyword extraction
+    extracted_tags = extract_tags_with_ai(title, analysis, content)
+
+    if extracted_tags:
+        # Save to DB and cache
+        db.set_article_tags(article_id, extracted_tags)
+        # _tag_cache is already handled by extract_tags_with_ai internally
+        logger.debug(f"Tags extracted and saved for article {article_id}.")
+        return extracted_tags
+    
+    return []
+
+
 # ============================================================================
 # AUTO-APPROVAL & PERSISTENCE FOR AI-DISCOVERED TAGS
 # ============================================================================

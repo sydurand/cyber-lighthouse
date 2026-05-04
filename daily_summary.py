@@ -185,41 +185,31 @@ def clean_old_topics(hours_limit=72):
         logger.error(f"Error cleaning old topics: {e}")
 
 
-def generate_daily_summary():
-    """Generates and sends a daily CTI summary report for the previous day."""
+def generate_daily_summary(target_date: Optional[datetime] = None):
+    """Generates and sends a daily CTI summary report for the specified date."""
     logger.info("Starting daily CTI summary generation...")
 
-    # Calculate previous day date range
-    yesterday = datetime.now() - timedelta(days=1)
-    day_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+    if target_date is None:
+        target_date = datetime.now() - timedelta(days=1)
     
-    logger.info(f"Generating summary for: {day_start.strftime('%Y-%m-%d')} 00:00 to {day_end.strftime('%Y-%m-%d')} 23:59")
+    day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    date_str = target_date.strftime('%Y-%m-%d')
 
-    # Get all topics created during the previous day
+    logger.info(f"Generating summary for: {date_str} 00:00 to {date_str} 23:59")
+
+    # Get all unsummarized topics created during the target day
     try:
-        import sqlite3
-        with sqlite3.connect(db.db_file) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT t.id, t.main_title, COUNT(DISTINCT at.article_id) as article_count
-                FROM topics t
-                LEFT JOIN article_topics at ON t.id = at.topic_id
-                WHERE t.created_at >= ? AND t.created_at <= ?
-                GROUP BY t.id
-                ORDER BY t.created_at ASC
-            """, (day_start.strftime("%Y-%m-%d %H:%M:%S"), day_end.strftime("%Y-%m-%d %H:%M:%S")))
-            topics = [dict(row) for row in cursor.fetchall()]
+        topics = db.get_unsummarized_topics_for_date(date_str)
     except Exception as e:
-        logger.error(f"Error retrieving topics: {e}")
+        logger.error(f"Error retrieving unsummarized topics for {date_str}: {e}")
         return None
 
     if not topics:
-        logger.info(f"No topics found for {yesterday.strftime('%Y-%m-%d')}")
+        logger.info(f"No unsummarized topics found for {date_str}")
         return None
 
-    logger.info(f"Processing {len(topics)} topics from {yesterday.strftime('%Y-%m-%d')}")
+    logger.info(f"Processing {len(topics)} unsummarized topics from {date_str}")
 
     # Build context for summary
     super_prompt = "=== SECTION 1: DAILY EVENTS (GROUPED BY TOPIC) ===\n"
@@ -310,14 +300,18 @@ STRICT FORMATTING RULES:
         archive_report_locally(summary_text)
 
         # Cache for web interface (use date as cache key)
-        cache_key = f"daily_summary:{yesterday.strftime('%Y-%m-%d')}"
+        cache_key = f"daily_summary:{date_str}"
         cache_data = {
-            "date": yesterday.strftime('%Y-%m-%d'),
+            "date": date_str,
             "content": summary_text,
             "articles_count": len(topics),
             "generated_at": datetime.now().isoformat(),
         }
         cache_synthesis_report(summary_text, topics, cache_key)
+
+        # Mark processed topics as summarized
+        topic_ids_processed = [t['id'] for t in topics]
+        db.mark_topics_as_summarized(topic_ids_processed)
 
         # Clean old data
         topic_retention_hours = int(os.getenv("TOPIC_RETENTION_HOURS", "168"))  # 7 days default
@@ -331,9 +325,31 @@ STRICT FORMATTING RULES:
         return None
 
 
+def retry_failed_daily_summary(lookback_days: int = 3):
+    """
+    Retries daily summary generation for recent days where it might have failed.
+    Checks for missing summary files and attempts to re-generate them.
+    """
+    logger.info(f"Checking for failed daily summaries for the last {lookback_days} days...")
+    today = datetime.now()
+    for i in range(1, lookback_days + 1):
+        target_date = today - timedelta(days=i)
+        date_str = target_date.strftime("%Y-%m-%d")
+        report_file = f"reports/summary_{date_str}.md"
+
+        if not os.path.exists(report_file):
+            logger.warning(f"Summary report for {date_str} is missing. Attempting re-generation...")
+            generate_daily_summary(target_date=target_date)
+        else:
+            logger.debug(f"Summary report for {date_str} already exists.")
+
+    logger.info("Finished checking for failed daily summaries.")
+
+
 def main():
     """Main entry point for daily summary generation."""
-    generate_daily_summary()
+    generate_daily_summary() # Generate for yesterday (default)
+    retry_failed_daily_summary() # Retry any failed summaries from recent days
 
 
 if __name__ == "__main__":

@@ -206,12 +206,15 @@ class TaskScheduler:
                 next_run = datetime.now() + timedelta(seconds=interval)
                 self.reanalysis_status.mark_start(next_run)
                 
-                from real_time import reprocess_failed_analyses
-                count = reprocess_failed_analyses()
+                from real_time import reprocess_failed_analyses, retry_failed_rapid_alerts
                 
-                self.reanalysis_status.mark_complete(article_count=count)
-                if count > 0:
-                    logger.info(f"Background re-analysis: fixed {count} articles.")
+                reprocessed_articles_count = reprocess_failed_analyses()
+                retried_alerts_count = retry_failed_rapid_alerts()
+                
+                total_processed = reprocessed_articles_count + retried_alerts_count
+                self.reanalysis_status.mark_complete(article_count=total_processed)
+                if total_processed > 0:
+                    logger.info(f"Background re-analysis: fixed {reprocessed_articles_count} articles, retried {retried_alerts_count} rapid alerts.")
                 
             except Exception as e:
                 self.reanalysis_status.mark_error(str(e))

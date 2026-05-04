@@ -39,6 +39,8 @@ class Database:
                         tags_json TEXT,
                         date TEXT NOT NULL,
                         processed_for_daily BOOLEAN DEFAULT 0,
+                        analysis_retry_count INTEGER DEFAULT 0,
+                        last_analysis_attempt TIMESTAMP,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
@@ -47,23 +49,31 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_source ON articles(source)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_processed ON articles(processed_for_daily)")
 
-                # Topics table for semantic clustering
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS topics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        main_title TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        processed_for_summary BOOLEAN DEFAULT 0,
-                        embedding BLOB
-                    )
-                """)
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topic_processed ON topics(processed_for_summary)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topic_created_at ON topics(created_at)")
-
                 # Migration: Add tags_json column if it doesn't exist
                 try:
                     cursor.execute("ALTER TABLE articles ADD COLUMN tags_json TEXT")
                     logger.info("Migration: Added tags_json column to articles table")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
+                # Migration: Add analysis_retry_count column if it doesn't exist
+                try:
+                    cursor.execute("ALTER TABLE articles ADD COLUMN analysis_retry_count INTEGER DEFAULT 0")
+                    logger.info("Migration: Added analysis_retry_count column to articles table")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
+                # Migration: Add last_analysis_attempt column if it doesn't exist
+                try:
+                    cursor.execute("ALTER TABLE articles ADD COLUMN last_analysis_attempt TIMESTAMP")
+                    logger.info("Migration: Added last_analysis_attempt column to articles table")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                
+                # Migration: Add rapid_alert_sent column to topics table
+                try:
+                    cursor.execute("ALTER TABLE topics ADD COLUMN rapid_alert_sent BOOLEAN DEFAULT 0")
+                    logger.info("Migration: Added rapid_alert_sent column to topics table")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
@@ -216,7 +226,9 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE articles
-                    SET analysis = ?
+                    SET analysis = ?,
+                        analysis_retry_count = 0,
+                        last_analysis_attempt = CURRENT_TIMESTAMP
                     WHERE link = ?
                 """, (analysis, link))
                 conn.commit()
@@ -381,26 +393,122 @@ class Database:
             logger.error(f"Error retrieving unprocessed articles: {e}")
             return []
 
-    def get_articles_needing_analysis(self, limit: int = 50) -> list:
-        """Get articles that are missing AI analysis."""
+    def get_articles_needing_analysis(self, limit: int = 10) -> list:
+        """
+        Get articles that are missing AI analysis, respecting retry counts and exponential backoff.
+        
+        Args:
+            limit: Maximum number of articles to retrieve.
+
+        Returns:
+            List of article dicts ready for re-analysis.
+        """
+        MAX_ANALYSIS_RETRIES = 5
+        ANALYSIS_RETRY_BACKOFF_SECONDS = 300  # 5 minutes base for exponential backoff
+
         try:
             with sqlite3.connect(self.db_file) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                # Un article a besoin d'analyse si sa colonne analysis est NULL, vide 
-                # ou contient le message de "Pending analysis"
-                cursor.execute("""
+                
+                # Select articles that need analysis AND are eligible for retry based on backoff
+                cursor.execute(f"""
                     SELECT * FROM articles
-                    WHERE analysis IS NULL 
-                       OR analysis = '' 
-                       OR analysis LIKE '[Pending%'
+                    WHERE (analysis IS NULL OR analysis = '' OR analysis LIKE '[Pending%')
+                      AND analysis_retry_count < ?
+                      AND (
+                            last_analysis_attempt IS NULL 
+                            OR 
+                            STRFTIME('%s', 'now') - STRFTIME('%s', last_analysis_attempt) 
+                            > (analysis_retry_count * analysis_retry_count + 1) * ?
+                          )
                     ORDER BY created_at DESC
                     LIMIT ?
-                """, (limit,))
-                return [dict(row) for row in cursor.fetchall()]
+                """, (MAX_ANALYSIS_RETRIES, ANALYSIS_RETRY_BACKOFF_SECONDS, limit))
+                
+                articles_to_retry = [dict(row) for row in cursor.fetchall()]
+                
+                # Increment retry count and update last_analysis_attempt for selected articles
+                if articles_to_retry:
+                    article_ids = [a['id'] for a in articles_to_retry]
+                    placeholders = ",".join("?" * len(article_ids))
+                    cursor.execute(f"""
+                        UPDATE articles
+                        SET analysis_retry_count = analysis_retry_count + 1,
+                            last_analysis_attempt = CURRENT_TIMESTAMP
+                        WHERE id IN ({placeholders})
+                    """, article_ids)
+                    conn.commit()
+                    logger.debug(f"Prepared {len(articles_to_retry)} articles for re-analysis, incremented retry count.")
+
+                return articles_to_retry
         except sqlite3.Error as e:
-            logger.error(f"Error retrieving articles needing analysis: {e}")
+            logger.error(f"Error retrieving articles needing analysis with retry logic: {e}")
             return []
+
+    def get_articles(
+        self,
+        article_id: Optional[int] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
+    ) -> tuple[list[dict], int]:
+        """
+        Get articles from the database with optional filters and pagination.
+
+        Args:
+            article_id: Specific article ID to retrieve.
+            date_from: Start date (YYYY-MM-DD) for filtering.
+            date_to: End date (YYYY-MM-DD) for filtering.
+            limit: Maximum number of articles to return.
+            offset: Number of articles to skip.
+
+        Returns:
+            A tuple containing a list of article dicts and the total count of matching articles.
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                where_clauses = []
+                params = []
+
+                if article_id is not None:
+                    where_clauses.append("id = ?")
+                    params.append(article_id)
+                if date_from:
+                    where_clauses.append("date >= ?")
+                    params.append(date_from)
+                if date_to:
+                    where_clauses.append("date <= ?")
+                    params.append(date_to)
+
+                where_sql = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+                # Get total count first
+                count_query = f"SELECT COUNT(*) FROM articles {where_sql}"
+                cursor.execute(count_query, params)
+                total_count = cursor.fetchone()[0]
+
+                # Get paginated articles
+                article_query = f"SELECT * FROM articles {where_sql} ORDER BY created_at DESC"
+                if limit is not None:
+                    article_query += f" LIMIT ?"
+                    params.append(limit)
+                if offset is not None:
+                    article_query += f" OFFSET ?"
+                    params.append(offset)
+                
+                cursor.execute(article_query, params)
+                articles = [dict(row) for row in cursor.fetchall()]
+            
+            logger.debug(f"Retrieved {len(articles)} articles (total: {total_count}) with filters.")
+            return articles, total_count
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving articles with filters: {e}")
+            return [], 0
 
     def get_all_articles(self) -> list:
         """Get all articles from the database."""
@@ -662,6 +770,89 @@ class Database:
             logger.error(f"Error deleting topic: {e}")
             return False
 
+    def get_topics_needing_rapid_alert_retry(self, limit: int = 5) -> list:
+        """
+        Get topics for which a rapid alert has not been sent, and which are old enough to retry.
+
+        Args:
+            limit: Maximum number of topics to retrieve.
+
+        Returns:
+            List of topic dicts.
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                # Select topics where rapid_alert_sent is 0 and created more than 5 minutes ago
+                cursor.execute("""
+                    SELECT id, main_title
+                    FROM topics
+                    WHERE rapid_alert_sent = 0
+                      AND created_at <= STRFTIME('%Y-%m-%d %H:%M:%S', DATETIME('now', '-5 minutes'))
+                    LIMIT ?
+                """, (limit,))
+                topics = [dict(row) for row in cursor.fetchall()]
+            logger.debug(f"Retrieved {len(topics)} topics needing rapid alert retry.")
+            return topics
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving topics needing rapid alert retry: {e}")
+            return []
+
+    def set_rapid_alert_sent_status(self, topic_id: int, status: bool) -> bool:
+        """
+        Set the rapid_alert_sent status for a topic.
+
+        Args:
+            topic_id: ID of the topic.
+            status: Boolean indicating whether the rapid alert was sent (True) or not (False).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE topics
+                    SET rapid_alert_sent = ?
+                    WHERE id = ?
+                """, (1 if status else 0, topic_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Error setting rapid_alert_sent status for topic {topic_id}: {e}")
+            return False
+
+    def get_unsummarized_topics_for_date(self, target_date: str) -> list:
+        """
+        Get topics created on a specific date that have not yet been summarized.
+
+        Args:
+            target_date: Date string in "YYYY-MM-DD" format.
+
+        Returns:
+            List of topic dicts.
+        """
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT t.id, t.main_title, COUNT(DISTINCT at.article_id) as article_count
+                    FROM topics t
+                    LEFT JOIN article_topics at ON t.id = at.topic_id
+                    WHERE t.created_at LIKE ? AND t.processed_for_summary = 0
+                    GROUP BY t.id
+                    ORDER BY t.created_at ASC
+                """, (f"{target_date}%",))
+                topics = [dict(row) for row in cursor.fetchall()]
+            logger.debug(f"Retrieved {len(topics)} unsummarized topics for {target_date}")
+            return topics
+        except sqlite3.Error as e:
+            logger.error(f"Error retrieving unsummarized topics for {target_date}: {e}")
+            return []
+
     def get_topic_by_id(self, topic_id: int) -> dict:
         """
         Get topic details by ID.
@@ -758,6 +949,25 @@ class Database:
         except sqlite3.Error as e:
             logger.error(f"Error retrieving topic articles: {e}")
             return []
+
+    def mark_topics_as_summarized(self, topic_ids: list[int]):
+        """Mark topics as processed for summary."""
+        if not topic_ids:
+            return
+
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                placeholders = ",".join("?" * len(topic_ids))
+                cursor.execute(f"""
+                    UPDATE topics
+                    SET processed_for_summary = 1
+                    WHERE id IN ({placeholders})
+                """, topic_ids)
+                conn.commit()
+                logger.debug(f"Marked {cursor.rowcount} topics as summarized")
+        except sqlite3.Error as e:
+            logger.error(f"Error marking topics as summarized: {e}")
 
     def mark_topic_processed(self, topic_id: int) -> bool:
         """
@@ -1095,6 +1305,70 @@ class Database:
         except sqlite3.Error as e:
             logger.error(f"Error deleting suggested tag: {e}")
             return False
+
+    def get_trending_topic_map_data(self, retention_hours: int, min_articles: int) -> tuple[dict, dict, dict]:
+        """
+        Build a mapping of article_id -> topic_id for topics that meet
+        the trending threshold (article_count >= min_articles)
+        AND have at least one recent article within retention_hours.
+        
+        Also returns topic_id -> latest_article_date for sort override
+        and topic_id -> list of related article source info.
+        """
+        from datetime import datetime, timedelta
+        limit_date = (datetime.now() - timedelta(hours=retention_hours)).strftime("%Y-%m-%d %H:%M:%S")
+
+        trending_articles = {}  # article_id -> topic_id
+        topic_latest_dates = {}  # topic_id -> latest_article_date
+        topic_articles = {}  # topic_id -> list of {source, title, link, date, id}
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+
+                # Optimized query to get trending topics and their articles in one go
+                cur.execute(f"""
+                    SELECT
+                        t.id AS topic_id,
+                        t.latest_article_date,
+                        a.id AS article_id,
+                        a.title,
+                        a.source,
+                        a.link,
+                        a.date,
+                        COUNT(at_count.article_id) OVER (PARTITION BY t.id) as article_count_for_topic
+                    FROM topics t
+                    JOIN article_topics at ON t.id = at.topic_id
+                    JOIN articles a ON at.article_id = a.id
+                    JOIN article_topics at_count ON t.id = at_count.topic_id -- For counting articles per topic
+                    GROUP BY t.id, t.latest_article_date, a.id, a.title, a.source, a.link, a.date
+                    HAVING article_count_for_topic >= ?
+                       AND MAX(a.created_at) OVER (PARTITION BY t.id) >= ?
+                    ORDER BY t.latest_article_date DESC, a.date DESC
+                """, (min_articles, limit_date))
+
+                for row in cur.fetchall():
+                    topic_id = row["topic_id"]
+                    article_id = row["article_id"]
+
+                    trending_articles[article_id] = topic_id
+                    topic_latest_dates[topic_id] = row["latest_article_date"]
+
+                    if topic_id not in topic_articles:
+                        topic_articles[topic_id] = []
+                    
+                    topic_articles[topic_id].append({
+                        "id": article_id,
+                        "title": row["title"],
+                        "source": row["source"],
+                        "link": row["link"],
+                        "date": row["date"],
+                    })
+            logger.debug(f"Built trending topic map with {len(topic_latest_dates)} topics")
+            return trending_articles, topic_latest_dates, topic_articles
+        except Exception as e:
+            logger.error(f"Failed to build trending topic map: {e}", exc_info=True)
+            return {}, {}, {}
 
     # ==================== Settings Methods ====================
 

@@ -166,8 +166,54 @@ def reprocess_failed_analyses() -> int:
             db.set_article_analysis(art.get('link'), analysis)
             success_count += 1
             
+
+
+
+
+
+
+def retry_failed_rapid_alerts() -> int:
+    """
+    Find topics for which rapid alerts failed to send and attempt to re-send them.
+    Returns the number of successfully sent alerts.
+    """
+    logger.info("Checking for topics requiring rapid alert retry...")
+    
+    topics_to_retry = db.get_topics_needing_rapid_alert_retry(limit=5)
+    if not topics_to_retry:
+        logger.debug("No topics found needing rapid alert retry.")
+        return 0
+        
+    success_count = 0
+    for topic in topics_to_retry:
+        # Respect rate limits
+        if not call_counter.can_make_call():
+            logger.warning("Rate limit reached during rapid alert retry, stopping.")
+            break
+            
+        topic_id = topic.get('id')
+        title = topic.get('main_title')
+        
+        logger.info(f"Retrying rapid alert for topic {topic_id}: {title[:50]}...")
+        alert_sent_successfully = False
+        try:
+            from ai_tasks import generate_rapid_alert_for_new_topic
+            # To generate alert, we need some content from an article in the topic
+            # For simplicity, let's just get the first linked article's content
+            linked_articles = db.get_topic_linked_articles(topic_id)
+            content = linked_articles[0].get('content', '') if linked_articles else ""
+            
+            alert_text = generate_rapid_alert_for_new_topic(title, content)
+            if send_teams_notification(alert_text):
+                alert_sent_successfully = True
+                success_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to generate or re-send rapid alert for topic {topic_id}: {e}")
+        finally:
+            db.set_rapid_alert_sent_status(topic_id, alert_sent_successfully)
+            
     if success_count > 0:
-        logger.info(f"Successfully re-analyzed {success_count} articles in background.")
+        logger.info(f"Successfully re-sent {success_count} rapid alerts in background.")
     return success_count
 
 
@@ -307,13 +353,17 @@ def process_queue_with_throttling(article_queue: list, db: Database) -> dict:
                     stats["new_topics"] += 1
 
                     # Generate rapid alert and send Teams notification
+                    alert_sent_successfully = False
                     try:
                         from ai_tasks import generate_rapid_alert_for_new_topic
                         alert_text = generate_rapid_alert_for_new_topic(title, content)
                         if send_teams_notification(alert_text):
                             stats["webhooks_sent"] += 1
+                            alert_sent_successfully = True
                     except Exception as e:
-                        logger.warning(f"Failed to generate alert for new topic: {e}")
+                        logger.warning(f"Failed to generate or send alert for new topic: {e}")
+                    finally:
+                        db.set_rapid_alert_sent_status(new_topic_id, alert_sent_successfully)
 
             else:
                 # Add to existing topic

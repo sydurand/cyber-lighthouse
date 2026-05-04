@@ -4,14 +4,13 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query, HTTPException
 import hashlib
-import sqlite3
 
 from database import Database
 from cache import get_cache
 from logging_config import logger
 from utils import (
     get_trending_tags,
-    _extract_tags_from_keywords_dynamic,
+    get_article_tags_with_fallback,
 )
 from export_utils import detect_severity_with_ai
 from config import Config
@@ -41,51 +40,12 @@ def _get_trending_topic_map():
     Also returns topic_id -> latest_article_date for sort override
     and topic_id -> list of related article source info.
     """
-    import os
-    retention_hours = int(os.getenv("TOPIC_RETENTION_HOURS", "168"))
-    limit_date = (datetime.now() - timedelta(hours=retention_hours)).strftime("%Y-%m-%d %H:%M:%S")
-
-    trending_articles = {}  # article_id -> topic_id
-    topic_latest_dates = {}  # topic_id -> latest_article_date
-    topic_articles = {}  # topic_id -> list of {source, title, link, date, id}
-    try:
-        with sqlite3.connect(db.db_file) as conn:
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            # Find topics with enough articles AND at least one recent article
-            cur.execute("""
-                SELECT t.id, t.latest_article_date, COUNT(at.article_id) as article_count
-                FROM topics t
-                JOIN article_topics at ON t.id = at.topic_id
-                JOIN articles a ON at.article_id = a.id
-                GROUP BY t.id
-                HAVING article_count >= ?
-                   AND MAX(a.created_at) >= ?
-            """, (Config.TRENDING_TOPIC_MIN_ARTICLES, limit_date))
-            for row in cur.fetchall():
-                topic_id = row["id"]
-                topic_latest_dates[topic_id] = row["latest_article_date"]
-                # Get all articles in this topic
-                cur2 = conn.cursor()
-                cur2.execute("""
-                    SELECT a.id, a.title, a.source, a.link, a.date
-                    FROM articles a
-                    JOIN article_topics at ON a.id = at.article_id
-                    WHERE at.topic_id = ?
-                    ORDER BY a.date DESC
-                """, (topic_id,))
-                related = []
-                for art_row in cur2.fetchall():
-                    trending_articles[art_row["id"]] = topic_id
-                    related.append({
-                        "id": art_row["id"],
-                        "title": art_row["title"],
-                        "source": art_row["source"],
-                        "link": art_row["link"],
-                    })
-                topic_articles[topic_id] = related
-    except Exception as e:
-        logger.debug(f"Failed to build trending topic map: {e}")
+    retention_hours = int(Config.TOPIC_RETENTION_HOURS)
+    min_articles = Config.TRENDING_TOPIC_MIN_ARTICLES
+    
+    trending_articles, topic_latest_dates, topic_articles = \
+        db.get_trending_topic_map_data(retention_hours, min_articles)
+    
     return trending_articles, topic_latest_dates, topic_articles
 
 
@@ -114,9 +74,19 @@ async def get_alerts(
         List of recent articles with their analysis and tags
     """
     try:
-        articles = db.get_all_articles()
-        total_articles = len(articles)
-
+        # Fetch articles with database-level filtering
+        all_articles_for_count, total_articles = db.get_articles(
+            date_from=date_from, 
+            date_to=date_to
+        )
+        # Fetch articles with database-level filtering and pagination
+        articles, _ = db.get_articles(
+            date_from=date_from, 
+            date_to=date_to, 
+            limit=limit, 
+            offset=offset
+        )
+        
         # Build trending topic map
         trending_articles, topic_latest_dates, topic_articles = _get_trending_topic_map()
 
@@ -130,11 +100,6 @@ async def get_alerts(
             return article.get("date", "")
 
         articles_sorted = sorted(articles, key=sort_key, reverse=True)
-
-        if date_from:
-            articles_sorted = [a for a in articles_sorted if a.get("date", "") >= date_from]
-        if date_to:
-            articles_sorted = [a for a in articles_sorted if a.get("date", "") <= date_to]
 
         all_alerts = []
         filtered_count = 0
@@ -152,19 +117,8 @@ async def get_alerts(
                 display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
             article_id = article.get("id", 0)
-            tags = db.get_article_tags(article_id)
-
-            if not tags:
-                tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
-                tags = _tag_cache.get(tags_cache_key, None)
-
-                if not tags:
-                    content = article.get("content", "")
-                    tags = _extract_tags_from_keywords_dynamic(title, display_analysis, content)
-                    if tags:
-                        _tag_cache[tags_cache_key] = tags
-                        db.set_article_tags(article_id, tags)
-
+            tags = get_article_tags_with_fallback(article_id, title, display_analysis, content)
+            
             # Add #Trending tag for articles in multi-article topics
             topic_id = trending_articles.get(article_id)
             if topic_id and "#Trending" not in tags:
@@ -246,8 +200,8 @@ async def get_alerts(
 async def get_alert(alert_id: int) -> AlertResponse:
     """Get a single alert by ID."""
     try:
-        articles = db.get_all_articles()
-        article = next((a for a in articles if a.get("id") == alert_id), None)
+        articles, _ = db.get_articles(article_id=alert_id)
+        article = articles[0] if articles else None
 
         if not article:
             raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
@@ -259,16 +213,7 @@ async def get_alert(alert_id: int) -> AlertResponse:
         if not display_analysis:
             display_analysis = f"[Pending analysis - {len(content)} chars of content available]"
 
-        tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
-        from utils import _tag_cache
-        tags = _tag_cache.get(tags_cache_key, [])
-
-        if not tags:
-            from utils import _extract_tags_from_keywords_dynamic
-            content = article.get("content", "")
-            tags = _extract_tags_from_keywords_dynamic(title, display_analysis or "", content)
-            if tags:
-                _tag_cache[tags_cache_key] = tags
+        tags = get_article_tags_with_fallback(article.get("id", 0), title, display_analysis, content)
 
         return AlertResponse(
             id=article.get("id", 0),
@@ -381,16 +326,13 @@ async def reanalyze_alert(alert_id: int) -> dict:
 
         # Clear tag cache to force re-extraction with new analysis
         tags_cache_key = hashlib.sha256(f"tags:{title}".encode()).hexdigest()
-        from utils import _tag_cache
+        from utils import _tag_cache # Keep this import for cache interaction
         if tags_cache_key in _tag_cache:
             del _tag_cache[tags_cache_key]
 
-        # Extract new tags
+        # Extract new tags using the centralized function
         content = article.get("content", "")
-        new_tags = _extract_tags_from_keywords_dynamic(title, new_analysis, content)
-        if new_tags:
-            _tag_cache[tags_cache_key] = new_tags
-            db.set_article_tags(alert_id, new_tags)
+        new_tags = get_article_tags_with_fallback(alert_id, title, new_analysis, content)
 
         # Calculate new severity
         new_severity = detect_severity_with_ai(new_analysis, title, new_tags or [])
