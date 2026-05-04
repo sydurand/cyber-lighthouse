@@ -49,6 +49,21 @@ class Database:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_source ON articles(source)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_processed ON articles(processed_for_daily)")
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS topics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        main_title TEXT NOT NULL,
+                        embedding BLOB,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        processed_for_summary BOOLEAN DEFAULT 0,
+                        rapid_alert_sent BOOLEAN DEFAULT 0,
+                        latest_article_date TEXT
+                    )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topics_created_at ON topics(created_at)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topics_processed_for_summary ON topics(processed_for_summary)")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_topics_latest_article_date ON topics(latest_article_date)")
+
                 # Migration: Add tags_json column if it doesn't exist
                 try:
                     cursor.execute("ALTER TABLE articles ADD COLUMN tags_json TEXT")
