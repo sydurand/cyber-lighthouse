@@ -584,7 +584,7 @@ class Database:
             with sqlite3.connect(self.db_file) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM articles ORDER BY created_at DESC")
+                cursor.execute("SELECT * FROM articles ORDER BY id ASC")
                 articles = [dict(row) for row in cursor.fetchall()]
 
             with open(output_file, "w", encoding="utf-8") as f:
