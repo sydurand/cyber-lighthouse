@@ -1342,7 +1342,7 @@ class Database:
                 cur = conn.cursor()
 
                 # Optimized query to get trending topics and their articles in one go
-                cur.execute(f"""
+                WITH TopicArticleCounts AS (
                     SELECT
                         t.id AS topic_id,
                         t.latest_article_date,
@@ -1351,16 +1351,25 @@ class Database:
                         a.source,
                         a.link,
                         a.date,
-                        COUNT(at_count.article_id) OVER (PARTITION BY t.id) as article_count_for_topic
+                        COUNT(at_count.article_id) OVER (PARTITION BY t.id) as article_count_for_topic,
+                        MAX(a.created_at) OVER (PARTITION BY t.id) as latest_article_created_at
                     FROM topics t
                     JOIN article_topics at ON t.id = at.topic_id
                     JOIN articles a ON at.article_id = a.id
-                    JOIN article_topics at_count ON t.id = at_count.topic_id -- For counting articles per topic
-                    GROUP BY t.id, t.latest_article_date, a.id, a.title, a.source, a.link, a.date
-                    HAVING article_count_for_topic >= ?
-                       AND MAX(a.created_at) OVER (PARTITION BY t.id) >= ?
-                    ORDER BY t.latest_article_date DESC, a.date DESC
-                """, (min_articles, limit_date))
+                    JOIN article_topics at_count ON t.id = at_count.topic_id
+                )
+                SELECT
+                    topic_id,
+                    latest_article_date,
+                    article_id,
+                    title,
+                    source,
+                    link,
+                    date
+                FROM TopicArticleCounts
+                WHERE article_count_for_topic >= ?
+                  AND latest_article_created_at >= ?
+                ORDER BY latest_article_date DESC, date DESC
 
                 for row in cur.fetchall():
                     topic_id = row["topic_id"]
