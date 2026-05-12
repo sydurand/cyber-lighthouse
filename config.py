@@ -2,9 +2,11 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from logging_config import logger
 
 # Load environment variables from .env file
 load_dotenv()
+logger.debug(f"DEBUG_ENV: OLLAMA_TIMEOUT raw from os.getenv after load_dotenv(): {os.getenv('OLLAMA_TIMEOUT')}")
 
 class Config:
     """Configuration class that loads settings from environment variables."""
@@ -21,6 +23,7 @@ class Config:
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
     OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+    logger.debug(f"DEBUG_ENV: Config.OLLAMA_TIMEOUT after int conversion: {Config.OLLAMA_TIMEOUT}")
 
     # Provider selection per use case
     # Valid values: 'ollama', 'openrouter', 'gemini', or '' (auto-select)
