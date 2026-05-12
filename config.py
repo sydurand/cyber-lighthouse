@@ -118,6 +118,9 @@ class Config:
     # Higher = fewer trending topics (default: 2)
     TRENDING_TOPIC_MIN_ARTICLES = int(os.getenv("TRENDING_TOPIC_MIN_ARTICLES", "2"))
 
+    # How many hours to retain trending topics. Older topics will be aged out.
+    TOPIC_RETENTION_HOURS = int(os.getenv("TOPIC_RETENTION_HOURS", "24"))
+
     @classmethod
     def validate(cls):
         """Validate that all required configuration is present."""
