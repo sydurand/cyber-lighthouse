@@ -1342,6 +1342,7 @@ class Database:
                 cur = conn.cursor()
 
                 # Optimized query to get trending topics and their articles in one go
+                cur.execute(f"""
                 WITH TopicArticleCounts AS (
                     SELECT
                         t.id AS topic_id,
@@ -1370,6 +1371,7 @@ class Database:
                 WHERE article_count_for_topic >= ?
                   AND latest_article_created_at >= ?
                 ORDER BY latest_article_date DESC, date DESC
+                """, (min_articles, limit_date))
 
                 for row in cur.fetchall():
                     topic_id = row["topic_id"]
