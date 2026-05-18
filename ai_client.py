@@ -93,29 +93,34 @@ class AIClient:
         Returns:
             Generated text response
         """
-        if self.use_openrouter:
-            return self._openrouter_generate(
-                prompt, system_instruction, temperature, timeout
-            )
-        elif self.use_gemini:
-            return self._gemini_generate(
-                prompt, system_instruction, temperature
-            )
-        else:
-            return self._ollama_generate(
-                prompt, system_instruction, temperature, timeout
-            )
+        try:
+            increment_active_llm_requests()
+            if self.use_openrouter:
+                return self._openrouter_generate(
+                    prompt, system_instruction, temperature, timeout
+                )
+            elif self.use_gemini:
+                return self._gemini_generate(
+                    prompt, system_instruction, temperature
+                )
+            else:
+                return self._ollama_generate(
+                    prompt, system_instruction, temperature, timeout
+                )
+        finally:
+            decrement_active_llm_requests()
 
     def _openrouter_generate(
         self,
         prompt: str,
         system_instruction: str,
         temperature: float,
-        timeout: int
+        timeout: int = None
     ) -> str:
         """Generate content using OpenRouter API with rate limit handling."""
         max_retries = 3
         retry_delay = 1
+        request_timeout = timeout if timeout is not None else Config.OPENROUTER_TIMEOUT
 
         for attempt in range(max_retries):
             try:
@@ -232,6 +237,7 @@ class AIClient:
         retry_delay = 2
         # Use passed timeout if provided, otherwise fall back to config
         request_timeout = timeout if timeout is not None else Config.OLLAMA_TIMEOUT
+        request_timeout = max(request_timeout, Config.OLLAMA_TIMEOUT) # Ensure timeout is at least the configured value
 
         for attempt in range(max_retries):
             try:
@@ -255,7 +261,7 @@ class AIClient:
                     }
                 }
 
-                logger.debug(f"Ollama request (attempt {attempt + 1}/{max_retries}): {self.model}")
+
                 response = requests.post(
                     f"{self.base_url}/api/chat",
                     json=payload,

@@ -309,6 +309,10 @@ class APICallCounter:
 _call_counter = None
 _counter_lock = threading.Lock()
 
+# Global counter for active LLM requests with thread safety
+_active_llm_requests = 0
+_active_llm_requests_lock = threading.Lock()
+
 
 def get_call_counter() -> APICallCounter:
     """Get or create the global API call counter instance (thread-safe)."""
@@ -318,3 +322,24 @@ def get_call_counter() -> APICallCounter:
             if _call_counter is None:  # Double-check locking
                 _call_counter = APICallCounter()
     return _call_counter
+
+def increment_active_llm_requests():
+    """Increment the count of active LLM requests."""
+    global _active_llm_requests
+    with _active_llm_requests_lock:
+        _active_llm_requests += 1
+        logger.debug(f"Active LLM requests incremented to: {_active_llm_requests}")
+
+def decrement_active_llm_requests():
+    """Decrement the count of active LLM requests (ensuring it doesn't go below 0)."""
+    global _active_llm_requests
+    with _active_llm_requests_lock:
+        if _active_llm_requests > 0:
+            _active_llm_requests -= 1
+        logger.debug(f"Active LLM requests decremented to: {_active_llm_requests}")
+
+def get_active_llm_requests_count() -> int:
+    """Get the current count of active LLM requests."""
+    global _active_llm_requests
+    with _active_llm_requests_lock:
+        return _active_llm_requests

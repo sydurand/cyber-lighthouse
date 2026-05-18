@@ -52,11 +52,14 @@ Be concise but informative. Each line should be a complete sentence."""
         instruction = """You are a SOC analyst creating urgent threat alerts.
 Be concise and highlight the most critical information."""
 
+        ai_timeout = Config.OLLAMA_TIMEOUT if ai_client.use_ollama else \
+                     (Config.OPENROUTER_TIMEOUT if ai_client.use_openrouter else Config.GEMINI_TIMEOUT)
+
         alert_text = ai_client.generate_content(
             prompt=prompt,
             system_instruction=instruction,
             temperature=0.2,
-            timeout=60
+            timeout=ai_timeout
         )
 
         call_counter.add_call()

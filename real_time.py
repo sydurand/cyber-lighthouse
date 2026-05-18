@@ -111,7 +111,8 @@ Be concise but informative. Each line should be a complete sentence."""
     try:
         logger.debug(f"Sending article to AI provider for analysis: {title[:50]}...")
         # Use appropriate timeout based on provider
-        ai_timeout = Config.OLLAMA_TIMEOUT if ai_client.use_ollama else Config.GEMINI_TIMEOUT
+        ai_timeout = Config.OLLAMA_TIMEOUT if ai_client.use_ollama else \
+                     (Config.OPENROUTER_TIMEOUT if ai_client.use_openrouter else Config.GEMINI_TIMEOUT)
         response_text = ai_client.generate_content(
             prompt=prompt,
             system_instruction=instruction,
@@ -177,6 +178,9 @@ def retry_failed_rapid_alerts() -> int:
     Find topics for which rapid alerts failed to send and attempt to re-send them.
     Returns the number of successfully sent alerts.
     """
+    if get_active_llm_requests_count() > 0:
+        logger.warning("Skipping rapid alert retry: LLM is currently busy with other requests.")
+        return 0
     logger.info("Checking for topics requiring rapid alert retry...")
     
     topics_to_retry = db.get_topics_needing_rapid_alert_retry(limit=5)
@@ -638,3 +642,4 @@ Examples:
 if __name__ == "__main__":
     import logging
     main()
+in()

@@ -2,14 +2,14 @@
 import logging
 import logging.handlers
 from pathlib import Path
-from config import Config
+import os
 
 
 def setup_logging():
     """Set up logging with both console and file handlers."""
     # Create logger
     logger = logging.getLogger("cyber_lighthouse")
-    logger.setLevel(getattr(logging, Config.LOG_LEVEL))
+    logger.setLevel(getattr(logging, os.getenv("LOG_LEVEL", "INFO")))
 
     # Remove existing handlers to avoid duplicates
     logger.handlers.clear()
@@ -22,12 +22,12 @@ def setup_logging():
 
     # Console handler (all messages)
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(getattr(logging, Config.LOG_LEVEL))
+    console_handler.setLevel(getattr(logging, os.getenv("LOG_LEVEL", "INFO")))
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
     # File handler with rotation (for audit trail)
-    log_file = Path(Config.LOG_FILE)
+    log_file = Path(os.getenv("LOG_FILE", "logs/cyber_lighthouse.log"))
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     file_handler = logging.handlers.RotatingFileHandler(
