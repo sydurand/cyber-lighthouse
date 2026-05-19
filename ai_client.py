@@ -4,6 +4,7 @@ import time
 import threading
 from logging_config import logger
 from config import Config
+from optimization import increment_active_llm_requests, decrement_active_llm_requests
 
 
 class AIClient:

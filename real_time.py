@@ -11,7 +11,9 @@ from ai_client import get_ai_client
 from optimization import (
     detect_similar_articles,
     optimize_for_rate_limit,
-    get_call_counter
+    get_call_counter,
+    decrement_active_llm_requests,
+    get_active_llm_requests_count
 )
 from utils import (
     retry_with_backoff, validate_rss_article, extract_article_content, sanitize_title,
@@ -131,6 +133,7 @@ Be concise but informative. Each line should be a complete sentence."""
         logger.debug(f"✓ Analysis cached: {title[:50]}...")
         return response_text
     except Exception as e:
+        decrement_active_llm_requests()
         logger.error(f"AI analysis failed for '{title[:50]}...': {e}")
         # Return None so caller skips analysis storage — article will show
         # as pending and can be re-analyzed later when the issue is resolved
@@ -641,5 +644,4 @@ Examples:
 
 if __name__ == "__main__":
     import logging
-    main()
-in()
+    
