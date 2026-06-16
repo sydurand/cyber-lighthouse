@@ -332,7 +332,7 @@ async def reanalyze_alert(alert_id: int) -> dict:
 
         # Extract new tags using the centralized function
         content = article.get("content", "")
-        new_tags = get_article_tags_with_fallback(alert_id, title, new_analysis, content)
+        new_tags = get_article_tags_with_fallback(alert_id, title, new_analysis, content, use_ai=True)
 
         # Calculate new severity
         new_severity = detect_severity_with_ai(new_analysis, title, new_tags or [])

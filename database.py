@@ -22,10 +22,21 @@ class Database:
             self.db_file = raw_path
         self._init_database()
 
+    def _get_connection(self):
+        """Get a thread-safe connection to the SQLite database with WAL mode configured."""
+        conn = sqlite3.connect(self.db_file)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=10000")
+        except sqlite3.Error as e:
+            logger.warning(f"Failed to configure database PRAGMAs: {e}")
+        return conn
+
     def _init_database(self):
         """Create database schema if it doesn't exist."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS articles (
@@ -209,7 +220,7 @@ class Database:
         content_hash = self._hash_content(content) if content else None
 
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO articles (source, title, content, link, content_hash, date)
@@ -237,7 +248,7 @@ class Database:
             True if updated, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE articles
@@ -268,7 +279,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE articles
@@ -293,7 +304,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT tags_json FROM articles WHERE id = ?", (article_id,))
                 row = cursor.fetchone()
@@ -318,7 +329,7 @@ class Database:
         import json
         updated = 0
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 for article_id in article_ids:
                     # Get existing tags
@@ -355,7 +366,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # Build OR query for all keywords against title and content
@@ -393,7 +404,7 @@ class Database:
     def get_unprocessed_articles(self) -> list:
         """Get all articles not yet processed for daily synthesis."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -422,7 +433,7 @@ class Database:
         ANALYSIS_RETRY_BACKOFF_SECONDS = 300  # 5 minutes base for exponential backoff
 
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
@@ -483,7 +494,7 @@ class Database:
             A tuple containing a list of article dicts and the total count of matching articles.
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
 
@@ -528,7 +539,7 @@ class Database:
     def get_all_articles(self) -> list:
         """Get all articles from the database."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -545,7 +556,7 @@ class Database:
     def mark_articles_as_processed(self, article_ids: list = None):
         """Mark articles as processed for daily synthesis."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 if article_ids:
                     placeholders = ",".join("?" * len(article_ids))
@@ -569,7 +580,7 @@ class Database:
     def article_exists(self, link: str) -> bool:
         """Check if an article with the given link already exists."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1 FROM articles WHERE link = ?", (link,))
                 return cursor.fetchone() is not None
@@ -581,7 +592,7 @@ class Database:
         """Export articles to JSON for backward compatibility."""
         output_file = output_file or Config.JSON_DATABASE_FILE
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM articles ORDER BY id ASC")
@@ -615,7 +626,7 @@ class Database:
                 ):
                     if article.get("traite_pour_synthese", False):
                         # Mark as processed if it was in the old database
-                        with sqlite3.connect(self.db_file) as conn:
+                        with self._get_connection() as conn:
                             cursor = conn.cursor()
                             cursor.execute(
                                 "UPDATE articles SET processed_for_daily = 1 WHERE link = ?",
@@ -631,7 +642,7 @@ class Database:
     def get_all_links(self) -> set:
         """Get all existing article links (for deduplication)."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT link FROM articles")
                 return {row[0] for row in cursor.fetchall()}
@@ -656,7 +667,7 @@ class Database:
             Topic ID if created successfully, None on error
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO topics (main_title, embedding)
@@ -682,7 +693,7 @@ class Database:
             True if updated, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE topics
@@ -711,7 +722,7 @@ class Database:
             True if successful, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR IGNORE INTO article_topics (article_id, topic_id)
@@ -750,7 +761,7 @@ class Database:
             True if successful, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     DELETE FROM article_topics
@@ -773,7 +784,7 @@ class Database:
             True if successful, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # Delete article associations first (foreign key constraint)
                 cursor.execute("DELETE FROM article_topics WHERE topic_id = ?", (topic_id,))
@@ -796,7 +807,7 @@ class Database:
             List of topic dicts.
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 # Select topics where rapid_alert_sent is 0 and created more than 5 minutes ago
@@ -826,7 +837,7 @@ class Database:
             True if successful, False otherwise.
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE topics
@@ -850,7 +861,7 @@ class Database:
             List of topic dicts.
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -879,7 +890,7 @@ class Database:
             Topic dict or None if not found
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM topics WHERE id = ?", (topic_id,))
@@ -911,7 +922,7 @@ class Database:
             List of topic dicts with 'embedding' as numpy array
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
@@ -950,7 +961,7 @@ class Database:
             List of article dicts linked to the topic
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -971,7 +982,7 @@ class Database:
             return
 
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 placeholders = ",".join("?" * len(topic_ids))
                 cursor.execute(f"""
@@ -995,7 +1006,7 @@ class Database:
             True if successful, False otherwise
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE topics
@@ -1025,7 +1036,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 # Check if tag already exists
                 cursor.execute(
@@ -1083,7 +1094,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -1124,7 +1135,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT id, tag, category, article_ids FROM suggested_tags
@@ -1199,7 +1210,7 @@ class Database:
         """
         import json
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT tag, category FROM suggested_tags
@@ -1229,7 +1240,7 @@ class Database:
             True if successful
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE suggested_tags
@@ -1254,7 +1265,7 @@ class Database:
             True if successful
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE suggested_tags
@@ -1279,7 +1290,7 @@ class Database:
             List of purged tag names
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT tag, category FROM suggested_tags
@@ -1312,7 +1323,7 @@ class Database:
             True if successful
         """
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM suggested_tags WHERE id = ?", (tag_id,))
                 conn.commit()
@@ -1337,7 +1348,7 @@ class Database:
         topic_latest_dates = {}  # topic_id -> latest_article_date
         topic_articles = {}  # topic_id -> list of {source, title, link, date, id}
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
 
@@ -1401,7 +1412,7 @@ class Database:
     def get_setting(self, key: str, default=None):
         """Get a setting value by key."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
                 row = cursor.fetchone()
@@ -1415,7 +1426,7 @@ class Database:
     def set_setting(self, key: str, value, category: str = "general") -> bool:
         """Set a setting value, inserting if it doesn't exist."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """INSERT INTO settings (key, value, category) VALUES (?, ?, ?)
@@ -1431,7 +1442,7 @@ class Database:
     def get_all_settings(self, category: str = None) -> dict:
         """Get all settings, optionally filtered by category."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 if category:
                     cursor.execute("SELECT key, value FROM settings WHERE category = ?", (category,))
@@ -1445,7 +1456,7 @@ class Database:
     def delete_setting(self, key: str) -> bool:
         """Delete a setting by key."""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM settings WHERE key = ?", (key,))
                 conn.commit()

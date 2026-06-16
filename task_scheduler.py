@@ -173,6 +173,10 @@ class TaskScheduler:
         """Background loop for real-time monitoring."""
         logger.info("Real-time monitoring loop started")
 
+        # Defer the first run to allow FastAPI server to boot up responsive
+        logger.info("Deferring initial real-time poll by 10s to allow server to become responsive...")
+        self._stop_event.wait(10)
+
         while not self._stop_event.is_set():
             try:
                 next_run = datetime.now() + timedelta(seconds=self.realtime_interval)
@@ -200,6 +204,10 @@ class TaskScheduler:
         # Run every 30 minutes
         interval = 1800 
         logger.info("Re-analysis background loop started")
+
+        # Defer the first run to allow FastAPI server to boot up responsive
+        logger.info("Deferring initial re-analysis by 30s to allow server to become responsive...")
+        self._stop_event.wait(30)
         
         while not self._stop_event.is_set():
             try:
